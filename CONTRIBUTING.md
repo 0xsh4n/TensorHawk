@@ -6,8 +6,7 @@ Thanks for helping make model artifacts safer to load. New **scanners** and
 ## Development setup
 
 ```bash
-git clone https://github.com/your-org/tensorhawk
-cd tensorhawk
+git clone https://github.com/0xsh4n/TensorHawk
 cargo build
 cargo test
 cargo run -p tensorhawk-cli -- tests/fixtures/malicious_model.bin

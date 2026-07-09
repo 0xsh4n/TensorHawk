@@ -104,7 +104,7 @@ cd tensorhawk
 Once it's on GitHub:
 
 ```bash
-git clone https://github.com/your-org/tensorhawk
+git clone https://github.com/0xsh4n/TensorHawk
 cd tensorhawk
 ```
 
@@ -348,12 +348,6 @@ rustup target add x86_64-unknown-linux-musl
 sudo apt-get install -y musl-tools
 cargo build --release --target x86_64-unknown-linux-musl
 ```
-
-> Remember to replace the `your-org` placeholder in `Cargo.toml`, the README
-> badges, and the workflow URLs with your actual GitHub org/username before you
-> push.
-
----
 
 ## 11. Troubleshooting
 

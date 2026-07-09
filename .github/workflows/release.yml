@@ -105,9 +105,15 @@ jobs:
 
       - name: Collect assets and aggregate checksums
         run: |
+          set -euo pipefail
           mkdir -p release
           find artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' \) -exec cp {} release/ \;
-          cat artifacts/**/*.sha256 > release/SHA256SUMS
+          find artifacts -type f -name '*.sha256' -exec cat {} + > release/SHA256SUMS
+          # Fail loudly rather than shipping an empty checksum file.
+          if [ ! -s release/SHA256SUMS ]; then
+            echo "::error::SHA256SUMS is empty — no checksum files were collected"; exit 1
+          fi
+          echo "--- SHA256SUMS ---"; cat release/SHA256SUMS
           ls -la release
 
       - name: Publish GitHub Release

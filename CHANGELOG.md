@@ -20,5 +20,5 @@ All notable changes to this project are documented here. The format follows
 - Cross-platform release automation (Linux gnu/musl, macOS x86_64/arm64, Windows)
   with SHA256 checksums.
 
-[Unreleased]: https://github.com/your-org/tensorhawk/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/your-org/tensorhawk/releases/tag/v0.1.0
+[Unreleased]: https://github.com/0xsh4n/TensorHawk/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/0xsh4n/TensorHawk/releases/tag/v0.1.0

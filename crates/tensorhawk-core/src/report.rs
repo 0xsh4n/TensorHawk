@@ -104,7 +104,7 @@ impl Report {
             "runs": [{
                 "tool": { "driver": {
                     "name": "TensorHawk",
-                    "informationUri": "https://github.com/your-org/tensorhawk",
+                    "informationUri": "https://github.com/0xsh4n/TensorHawk",
                     "version": VERSION,
                     "rules": [],
                 }},

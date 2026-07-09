@@ -6,8 +6,8 @@
 
 *Semgrep and Trivy scan your source and containers. TensorHawk scans the weights.*
 
-[![CI](https://github.com/your-org/tensorhawk/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/tensorhawk/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/your-org/tensorhawk?sort=semver)](https://github.com/your-org/tensorhawk/releases)
+[![CI](https://github.com/0xsh4n/TensorHawk/actions/workflows/ci.yml/badge.svg)](https://github.com/0xsh4n/TensorHawk/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/0xsh4n/TensorHawk?sort=semver)](https://github.com/0xsh4n/TensorHawk/releases)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org)
 
@@ -48,13 +48,13 @@ Findings are scored by severity × confidence, mapped to **OWASP LLM Top 10**, *
 ### From a release (recommended)
 
 Download a prebuilt binary for your platform from the
-[Releases page](https://github.com/your-org/tensorhawk/releases), verify the checksum,
+[Releases page](https://github.com/0xsh4n/TensorHawk/releases), verify the checksum,
 and drop it on your `PATH`:
 
 ```bash
 # example for Linux x86_64
-curl -LO https://github.com/your-org/tensorhawk/releases/latest/download/tensorhawk-x86_64-unknown-linux-gnu.tar.gz
-curl -LO https://github.com/your-org/tensorhawk/releases/latest/download/SHA256SUMS
+curl -LO https://github.com/0xsh4n/TensorHawk/releases/latest/download/tensorhawk-x86_64-unknown-linux-gnu.tar.gz
+curl -LO https://github.com/0xsh4n/TensorHawk/releases/latest/download/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
 tar xzf tensorhawk-x86_64-unknown-linux-gnu.tar.gz
 sudo mv tensorhawk /usr/local/bin/
@@ -63,7 +63,7 @@ sudo mv tensorhawk /usr/local/bin/
 ### From source
 
 ```bash
-cargo install --git https://github.com/your-org/tensorhawk tensorhawk-cli
+cargo install --git https://github.com/0xsh4n/TensorHawk tensorhawk-cli
 # or, in a clone:
 cargo build --release   # -> target/release/tensorhawk
 ```
