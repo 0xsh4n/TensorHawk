@@ -49,7 +49,11 @@ impl Scanner for MetadataScanner {
         for (key, value) in &artifact.metadata {
             let comp = format!("metadata:{key}");
 
-            if let Some(m) = self.unix_home.find(value).or_else(|| self.win_path.find(value)) {
+            if let Some(m) = self
+                .unix_home
+                .find(value)
+                .or_else(|| self.win_path.find(value))
+            {
                 findings.push(
                     Finding::builder("THK-MET-001", "metadata", Severity::Low)
                         .title("Absolute build path leaks a username/host")

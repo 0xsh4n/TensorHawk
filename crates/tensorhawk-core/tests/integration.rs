@@ -24,10 +24,7 @@ fn malicious_checkpoint_is_critical() {
 #[test]
 fn benign_checkpoint_is_clean() {
     let report = analyze(&fixture("benign_model.bin")).expect("scan");
-    assert!(report
-        .findings
-        .iter()
-        .all(|f| f.severity < Severity::High));
+    assert!(report.findings.iter().all(|f| f.severity < Severity::High));
 }
 
 #[test]

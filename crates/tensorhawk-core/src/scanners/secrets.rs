@@ -26,32 +26,97 @@ pub struct SecretScanner {
 impl SecretScanner {
     pub fn new() -> Self {
         let defs: &[(&str, &str, Severity, &str, f32)] = &[
-            ("THK-SEC-001", "AWS Access Key ID", Severity::Critical,
-             r"\b(?:AKIA|ASIA|AGPA|AIDA|AROA|ANPA)[0-9A-Z]{16}\b", 0.95),
-            ("THK-SEC-002", "GitHub Token", Severity::Critical,
-             r"\bgh[pousr]_[0-9A-Za-z]{36,}\b", 0.97),
-            ("THK-SEC-003", "Slack Token", Severity::High,
-             r"\bxox[baprs]-[0-9A-Za-z-]{10,}\b", 0.9),
-            ("THK-SEC-004", "Google API Key", Severity::High,
-             r"\bAIza[0-9A-Za-z_\-]{35}\b", 0.9),
-            ("THK-SEC-005", "Stripe Secret Key", Severity::Critical,
-             r"\bsk_live_[0-9A-Za-z]{24,}\b", 0.97),
-            ("THK-SEC-006", "OpenAI API Key", Severity::Critical,
-             r"\bsk-(?:proj-)?[0-9A-Za-z_\-]{20,}\b", 0.8),
-            ("THK-SEC-007", "Anthropic API Key", Severity::Critical,
-             r"\bsk-ant-[0-9A-Za-z_\-]{20,}\b", 0.95),
-            ("THK-SEC-008", "Private Key Block", Severity::Critical,
-             r"-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----", 0.98),
-            ("THK-SEC-009", "JWT", Severity::Medium,
-             r"\beyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\b", 0.75),
-            ("THK-SEC-010", "Generic Bearer/Authorization header", Severity::Medium,
-             r"(?i)authorization:\s*bearer\s+[0-9A-Za-z._\-]{16,}", 0.6),
-            ("THK-SEC-011", "Database connection string", Severity::High,
-             r"(?i)(?:postgres|postgresql|mysql|mongodb(?:\+srv)?|redis|amqp)://[^\s:@/]+:[^\s:@/]+@", 0.85),
-            ("THK-SEC-012", "Google OAuth client secret", Severity::High,
-             r"\bGOCSPX-[0-9A-Za-z_\-]{20,}\b", 0.9),
-            ("THK-SEC-013", "Twilio Account SID", Severity::Medium,
-             r"\bAC[0-9a-fA-F]{32}\b", 0.7),
+            (
+                "THK-SEC-001",
+                "AWS Access Key ID",
+                Severity::Critical,
+                r"\b(?:AKIA|ASIA|AGPA|AIDA|AROA|ANPA)[0-9A-Z]{16}\b",
+                0.95,
+            ),
+            (
+                "THK-SEC-002",
+                "GitHub Token",
+                Severity::Critical,
+                r"\bgh[pousr]_[0-9A-Za-z]{36,}\b",
+                0.97,
+            ),
+            (
+                "THK-SEC-003",
+                "Slack Token",
+                Severity::High,
+                r"\bxox[baprs]-[0-9A-Za-z-]{10,}\b",
+                0.9,
+            ),
+            (
+                "THK-SEC-004",
+                "Google API Key",
+                Severity::High,
+                r"\bAIza[0-9A-Za-z_\-]{35}\b",
+                0.9,
+            ),
+            (
+                "THK-SEC-005",
+                "Stripe Secret Key",
+                Severity::Critical,
+                r"\bsk_live_[0-9A-Za-z]{24,}\b",
+                0.97,
+            ),
+            (
+                "THK-SEC-006",
+                "OpenAI API Key",
+                Severity::Critical,
+                r"\bsk-(?:proj-)?[0-9A-Za-z_\-]{20,}\b",
+                0.8,
+            ),
+            (
+                "THK-SEC-007",
+                "Anthropic API Key",
+                Severity::Critical,
+                r"\bsk-ant-[0-9A-Za-z_\-]{20,}\b",
+                0.95,
+            ),
+            (
+                "THK-SEC-008",
+                "Private Key Block",
+                Severity::Critical,
+                r"-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----",
+                0.98,
+            ),
+            (
+                "THK-SEC-009",
+                "JWT",
+                Severity::Medium,
+                r"\beyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\b",
+                0.75,
+            ),
+            (
+                "THK-SEC-010",
+                "Generic Bearer/Authorization header",
+                Severity::Medium,
+                r"(?i)authorization:\s*bearer\s+[0-9A-Za-z._\-]{16,}",
+                0.6,
+            ),
+            (
+                "THK-SEC-011",
+                "Database connection string",
+                Severity::High,
+                r"(?i)(?:postgres|postgresql|mysql|mongodb(?:\+srv)?|redis|amqp)://[^\s:@/]+:[^\s:@/]+@",
+                0.85,
+            ),
+            (
+                "THK-SEC-012",
+                "Google OAuth client secret",
+                Severity::High,
+                r"\bGOCSPX-[0-9A-Za-z_\-]{20,}\b",
+                0.9,
+            ),
+            (
+                "THK-SEC-013",
+                "Twilio Account SID",
+                Severity::Medium,
+                r"\bAC[0-9a-fA-F]{32}\b",
+                0.7,
+            ),
         ];
         let patterns = defs
             .iter()
@@ -125,7 +190,9 @@ fn secret_finding(p: &Pattern, component: &str, offset: Option<u64>, hit: &str) 
         .confidence(p.confidence)
         .reference("OWASP-LLM06: Sensitive Information Disclosure")
         .reference("CWE-798: Use of Hard-coded Credentials")
-        .remediation("Rotate the exposed credential immediately and rebuild the artifact without it.")
+        .remediation(
+            "Rotate the exposed credential immediately and rebuild the artifact without it.",
+        )
         .evidence(redact(hit))
         .build()
 }

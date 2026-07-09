@@ -79,8 +79,8 @@ fn collect_targets(cli: &Cli) -> Vec<PathBuf> {
         return vec![cli.path.clone()];
     }
     if cli.path.is_dir() {
-        let walker = walkdir::WalkDir::new(&cli.path)
-            .max_depth(if cli.recursive { usize::MAX } else { 1 });
+        let walker =
+            walkdir::WalkDir::new(&cli.path).max_depth(if cli.recursive { usize::MAX } else { 1 });
         return walker
             .into_iter()
             .filter_map(|e| e.ok())
@@ -100,7 +100,10 @@ fn main() -> Result<()> {
 
     let targets = collect_targets(&cli);
     if targets.is_empty() {
-        eprintln!("tensorhawk: no scannable model files at {}", cli.path.display());
+        eprintln!(
+            "tensorhawk: no scannable model files at {}",
+            cli.path.display()
+        );
         std::process::exit(2);
     }
 
@@ -131,10 +134,7 @@ fn main() -> Result<()> {
         OutputFormat::Sarif => {
             // For multiple targets we emit the first run; a merged SARIF run is
             // on the roadmap. Single-file is the common CI case.
-            reports
-                .first()
-                .map(|r| r.to_sarif())
-                .unwrap_or_default()
+            reports.first().map(|r| r.to_sarif()).unwrap_or_default()
         }
     };
 

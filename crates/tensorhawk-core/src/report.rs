@@ -31,9 +31,11 @@ impl Report {
     pub fn new(target: String, format: String, bytes: u64, mut findings: Vec<Finding>) -> Self {
         // Highest severity, then highest confidence first.
         findings.sort_by(|a, b| {
-            b.severity
-                .cmp(&a.severity)
-                .then(b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal))
+            b.severity.cmp(&a.severity).then(
+                b.confidence
+                    .partial_cmp(&a.confidence)
+                    .unwrap_or(std::cmp::Ordering::Equal),
+            )
         });
 
         let mut summary = Summary::default();
@@ -153,17 +155,25 @@ impl Report {
                 c.dim, f.rule_id, f.scanner, f.location.component, c.reset
             ));
             if let Some(ev) = &f.evidence {
-                out.push_str(&format!("           {}evidence: {}{}\n", c.dim, ev, c.reset));
+                out.push_str(&format!(
+                    "           {}evidence: {}{}\n",
+                    c.dim, ev, c.reset
+                ));
             }
         }
 
         out.push_str(&format!(
             "\n  {}{} critical  {}{} high  {}{} medium  {}{} low  {}{} info{}\n",
-            c.red, self.summary.critical,
-            c.magenta, self.summary.high,
-            c.yellow, self.summary.medium,
-            c.blue, self.summary.low,
-            c.dim, self.summary.info,
+            c.red,
+            self.summary.critical,
+            c.magenta,
+            self.summary.high,
+            c.yellow,
+            self.summary.medium,
+            c.blue,
+            self.summary.low,
+            c.dim,
+            self.summary.info,
             c.reset
         ));
         out

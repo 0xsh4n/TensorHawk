@@ -25,20 +25,55 @@ pub struct PiiScanner {
 impl PiiScanner {
     pub fn new() -> Self {
         let defs: &[(&str, &str, Severity, &str, f32)] = &[
-            ("THK-PII-001", "Email address", Severity::Low,
-             r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", 0.7),
-            ("THK-PII-002", "Credit card number (Luhn-shaped)", Severity::High,
-             r"\b(?:\d[ \-]?){13,16}\b", 0.4),
-            ("THK-PII-003", "US SSN", Severity::High,
-             r"\b\d{3}-\d{2}-\d{4}\b", 0.6),
-            ("THK-PII-004", "India Aadhaar (12-digit)", Severity::High,
-             r"\b\d{4}\s?\d{4}\s?\d{4}\b", 0.4),
-            ("THK-PII-005", "India PAN", Severity::Medium,
-             r"\b[A-Z]{5}\d{4}[A-Z]\b", 0.7),
-            ("THK-PII-006", "IBAN", Severity::Medium,
-             r"\b[A-Z]{2}\d{2}[A-Z0-9]{10,30}\b", 0.6),
-            ("THK-PII-007", "IPv4 address", Severity::Info,
-             r"\b(?:\d{1,3}\.){3}\d{1,3}\b", 0.5),
+            (
+                "THK-PII-001",
+                "Email address",
+                Severity::Low,
+                r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}",
+                0.7,
+            ),
+            (
+                "THK-PII-002",
+                "Credit card number (Luhn-shaped)",
+                Severity::High,
+                r"\b(?:\d[ \-]?){13,16}\b",
+                0.4,
+            ),
+            (
+                "THK-PII-003",
+                "US SSN",
+                Severity::High,
+                r"\b\d{3}-\d{2}-\d{4}\b",
+                0.6,
+            ),
+            (
+                "THK-PII-004",
+                "India Aadhaar (12-digit)",
+                Severity::High,
+                r"\b\d{4}\s?\d{4}\s?\d{4}\b",
+                0.4,
+            ),
+            (
+                "THK-PII-005",
+                "India PAN",
+                Severity::Medium,
+                r"\b[A-Z]{5}\d{4}[A-Z]\b",
+                0.7,
+            ),
+            (
+                "THK-PII-006",
+                "IBAN",
+                Severity::Medium,
+                r"\b[A-Z]{2}\d{2}[A-Z0-9]{10,30}\b",
+                0.6,
+            ),
+            (
+                "THK-PII-007",
+                "IPv4 address",
+                Severity::Info,
+                r"\b(?:\d{1,3}\.){3}\d{1,3}\b",
+                0.5,
+            ),
         ];
         let pats = defs
             .iter()

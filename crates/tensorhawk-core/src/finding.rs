@@ -57,10 +57,16 @@ pub struct Location {
 
 impl Location {
     pub fn new(component: impl Into<String>) -> Self {
-        Self { component: component.into(), offset: None }
+        Self {
+            component: component.into(),
+            offset: None,
+        }
     }
     pub fn at(component: impl Into<String>, offset: u64) -> Self {
-        Self { component: component.into(), offset: Some(offset) }
+        Self {
+            component: component.into(),
+            offset: Some(offset),
+        }
     }
 }
 

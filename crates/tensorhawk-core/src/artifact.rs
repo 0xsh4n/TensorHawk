@@ -37,8 +37,8 @@ impl Artifact {
 
     /// Load and structurally parse an artifact from disk.
     pub fn load(path: &Path) -> Result<Self> {
-        let file = std::fs::File::open(path)
-            .with_context(|| format!("opening {}", path.display()))?;
+        let file =
+            std::fs::File::open(path).with_context(|| format!("opening {}", path.display()))?;
         let size = file.metadata()?.len();
         // SAFETY: file is opened read-only; we treat the map as immutable.
         let map = unsafe { Mmap::map(&file)? };
@@ -240,10 +240,10 @@ impl<'a> Cursor<'a> {
 
 fn scalar_size(t: u32) -> Option<usize> {
     Some(match t {
-        0 | 1 | 7 => 1,        // uint8 / int8 / bool
-        2 | 3 => 2,            // uint16 / int16
-        4 | 5 | 6 => 4,        // uint32 / int32 / float32
-        10 | 11 | 12 => 8,     // uint64 / int64 / float64
+        0 | 1 | 7 => 1,    // uint8 / int8 / bool
+        2 | 3 => 2,        // uint16 / int16
+        4 | 5 | 6 => 4,    // uint32 / int32 / float32
+        10 | 11 | 12 => 8, // uint64 / int64 / float64
         _ => return None,
     })
 }

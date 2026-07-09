@@ -46,8 +46,16 @@ const DANGEROUS: &[(&str, Severity, &str)] = &[
     ("builtins.__import__", Severity::High, "dynamic import"),
     ("builtins.getattr", Severity::Medium, "attribute pivot"),
     ("builtins.open", Severity::High, "file access"),
-    ("__builtin__.eval", Severity::Critical, "arbitrary code eval"),
-    ("__builtin__.exec", Severity::Critical, "arbitrary code exec"),
+    (
+        "__builtin__.eval",
+        Severity::Critical,
+        "arbitrary code eval",
+    ),
+    (
+        "__builtin__.exec",
+        Severity::Critical,
+        "arbitrary code exec",
+    ),
     ("socket.", Severity::High, "network egress"),
     ("shutil.", Severity::High, "filesystem manipulation"),
     ("pty.", Severity::Critical, "interactive shell"),
@@ -115,7 +123,10 @@ fn scan_stream(component: &str, bytes: &[u8]) -> Vec<Finding> {
         if let Some((sev, why)) = classify(&imp.module, &imp.name) {
             findings.push(
                 Finding::builder("THK-PKL-001", "pickle", sev)
-                    .title(format!("Dangerous pickle import: {}.{}", imp.module, imp.name))
+                    .title(format!(
+                        "Dangerous pickle import: {}.{}",
+                        imp.module, imp.name
+                    ))
                     .detail(format!(
                         "The pickle stream imports `{}.{}` ({why}). During `torch.load` / \
                          `pickle.load` this callable can be triggered by a REDUCE opcode to \
@@ -138,7 +149,10 @@ fn scan_stream(component: &str, bytes: &[u8]) -> Vec<Finding> {
         } else if !is_benign(&imp.module, &imp.name) {
             findings.push(
                 Finding::builder("THK-PKL-002", "pickle", Severity::Low)
-                    .title(format!("Unexpected pickle import: {}.{}", imp.module, imp.name))
+                    .title(format!(
+                        "Unexpected pickle import: {}.{}",
+                        imp.module, imp.name
+                    ))
                     .detail(format!(
                         "The pickle stream imports `{}.{}`, which is outside the set of \
                          imports expected in a benign PyTorch checkpoint. Review manually.",
@@ -182,7 +196,12 @@ fn disassemble(b: &[u8]) -> Disasm {
     macro_rules! need {
         ($k:expr) => {{
             if i + $k > n {
-                return Disasm { imports, has_reduce, truncated: true, stop_offset: i };
+                return Disasm {
+                    imports,
+                    has_reduce,
+                    truncated: true,
+                    stop_offset: i,
+                };
             }
         }};
     }
@@ -209,33 +228,73 @@ fn disassemble(b: &[u8]) -> Disasm {
                 // GLOBAL: module\n name\n
                 let (module, ni) = match readline(b, i) {
                     Some(v) => v,
-                    None => return Disasm { imports, has_reduce, truncated: true, stop_offset: op_off },
+                    None => {
+                        return Disasm {
+                            imports,
+                            has_reduce,
+                            truncated: true,
+                            stop_offset: op_off,
+                        }
+                    }
                 };
                 let (name, ni2) = match readline(b, ni) {
                     Some(v) => v,
-                    None => return Disasm { imports, has_reduce, truncated: true, stop_offset: op_off },
+                    None => {
+                        return Disasm {
+                            imports,
+                            has_reduce,
+                            truncated: true,
+                            stop_offset: op_off,
+                        }
+                    }
                 };
-                imports.push(Import { module, name, offset: op_off });
+                imports.push(Import {
+                    module,
+                    name,
+                    offset: op_off,
+                });
                 i = ni2;
             }
             b'i' => {
                 // INST: module\n name\n
                 let (module, ni) = match readline(b, i) {
                     Some(v) => v,
-                    None => return Disasm { imports, has_reduce, truncated: true, stop_offset: op_off },
+                    None => {
+                        return Disasm {
+                            imports,
+                            has_reduce,
+                            truncated: true,
+                            stop_offset: op_off,
+                        }
+                    }
                 };
                 let (name, ni2) = match readline(b, ni) {
                     Some(v) => v,
-                    None => return Disasm { imports, has_reduce, truncated: true, stop_offset: op_off },
+                    None => {
+                        return Disasm {
+                            imports,
+                            has_reduce,
+                            truncated: true,
+                            stop_offset: op_off,
+                        }
+                    }
                 };
-                imports.push(Import { module, name, offset: op_off });
+                imports.push(Import {
+                    module,
+                    name,
+                    offset: op_off,
+                });
                 i = ni2;
             }
             0x93 => {
                 // STACK_GLOBAL: pop name, module from the shadow stack
                 let name = str_stack.pop().unwrap_or_default();
                 let module = str_stack.pop().unwrap_or_default();
-                imports.push(Import { module, name, offset: op_off });
+                imports.push(Import {
+                    module,
+                    name,
+                    offset: op_off,
+                });
             }
             b'R' | 0x92 => {
                 // REDUCE / NEWOBJ_EX-adjacent construction
@@ -298,14 +357,28 @@ fn disassemble(b: &[u8]) -> Disasm {
                         }
                         i = ni;
                     }
-                    None => return Disasm { imports, has_reduce, truncated: true, stop_offset: op_off },
+                    None => {
+                        return Disasm {
+                            imports,
+                            has_reduce,
+                            truncated: true,
+                            stop_offset: op_off,
+                        }
+                    }
                 }
             }
             b'F' | b'I' | b'L' => {
                 // FLOAT / INT / LONG: newline-terminated numeric
                 match readline(b, i) {
                     Some((_, ni)) => i = ni,
-                    None => return Disasm { imports, has_reduce, truncated: true, stop_offset: op_off },
+                    None => {
+                        return Disasm {
+                            imports,
+                            has_reduce,
+                            truncated: true,
+                            stop_offset: op_off,
+                        }
+                    }
                 }
             }
 
@@ -352,24 +425,56 @@ fn disassemble(b: &[u8]) -> Disasm {
             }
 
             // ---- fixed-size args -----------------------------------------
-            0x80 => { need!(1); i += 1; } // PROTO
-            0x95 => { need!(8); i += 1 + 7; } // FRAME: 8-byte length
-            b'J' | b'r' | b'j' => { need!(4); i += 4; } // BININT / LONG_BINPUT / LONG_BINGET
-            b'K' | b'q' | b'h' => { need!(1); i += 1; } // BININT1 / BINPUT / BINGET
-            b'M' => { need!(2); i += 2; } // BININT2
-            b'G' => { need!(8); i += 8; } // BINFLOAT
-            0x82 => { need!(1); i += 1; } // EXT1
-            0x83 => { need!(2); i += 2; } // EXT2
-            0x84 => { need!(4); i += 4; } // EXT4
+            0x80 => {
+                need!(1);
+                i += 1;
+            } // PROTO
+            0x95 => {
+                need!(8);
+                i += 1 + 7;
+            } // FRAME: 8-byte length
+            b'J' | b'r' | b'j' => {
+                need!(4);
+                i += 4;
+            } // BININT / LONG_BINPUT / LONG_BINGET
+            b'K' | b'q' | b'h' => {
+                need!(1);
+                i += 1;
+            } // BININT1 / BINPUT / BINGET
+            b'M' => {
+                need!(2);
+                i += 2;
+            } // BININT2
+            b'G' => {
+                need!(8);
+                i += 8;
+            } // BINFLOAT
+            0x82 => {
+                need!(1);
+                i += 1;
+            } // EXT1
+            0x83 => {
+                need!(2);
+                i += 2;
+            } // EXT2
+            0x84 => {
+                need!(4);
+                i += 4;
+            } // EXT4
 
             // ---- zero-arg opcodes ----------------------------------------
-            b'(' | b'.' | b'0' | b'1' | b'2' | b'N' | b't' | b'l' | b'd' | b'}' | b']'
-            | b')' | b'a' | b'e' | b's' | b'u' | b'b' | b'o' | b'Q' | 0x85 | 0x86 | 0x87
-            | 0x88 | 0x89 | 0x8f | 0x90 | 0x91 | 0x94 | 0x97 | 0x98 => {}
+            b'(' | b'.' | b'0' | b'1' | b'2' | b'N' | b't' | b'l' | b'd' | b'}' | b']' | b')'
+            | b'a' | b'e' | b's' | b'u' | b'b' | b'o' | b'Q' | 0x85 | 0x86 | 0x87 | 0x88 | 0x89
+            | 0x8f | 0x90 | 0x91 | 0x94 | 0x97 | 0x98 => {}
 
             // Unknown opcode: stop and flag as truncated/evasive.
             _ => {
-                return Disasm { imports, has_reduce, truncated: true, stop_offset: op_off };
+                return Disasm {
+                    imports,
+                    has_reduce,
+                    truncated: true,
+                    stop_offset: op_off,
+                };
             }
         }
 
@@ -379,7 +484,12 @@ fn disassemble(b: &[u8]) -> Disasm {
         }
     }
 
-    Disasm { imports, has_reduce, truncated: false, stop_offset: i }
+    Disasm {
+        imports,
+        has_reduce,
+        truncated: false,
+        stop_offset: i,
+    }
 }
 
 #[cfg(test)]
@@ -404,7 +514,10 @@ mod tests {
 
         let d = disassemble(&b);
         assert!(d.has_reduce);
-        assert!(d.imports.iter().any(|i| i.module == "os" && i.name == "system"));
+        assert!(d
+            .imports
+            .iter()
+            .any(|i| i.module == "os" && i.name == "system"));
         let findings = scan_stream("archive:data.pkl", &b);
         assert!(findings.iter().any(|f| f.severity == Severity::Critical));
     }
