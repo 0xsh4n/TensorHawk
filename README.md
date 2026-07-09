@@ -173,7 +173,7 @@ what exists versus what's planned.
 - **v2.0:** optional ML-assisted detectors (backdoor/trigger heuristics, memorization
   indicators) behind a clearly-labelled `--experimental` flag.
 
-Full detail in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+Full detail in [`ROADMAP.md`](ROADMAP.md).
 
 ## Scope and honest limitations
 
@@ -192,7 +192,7 @@ behavior.
 New scanners and rules are the highest-value contributions. A scanner is ~100 lines
 implementing one trait. Start with [`DEVELOPING.md`](DEVELOPING.md) for a from-scratch
 build/run/test setup, then see [`CONTRIBUTING.md`](CONTRIBUTING.md) and
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+[`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Security
 
