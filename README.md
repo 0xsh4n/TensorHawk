@@ -143,7 +143,7 @@ TensorHawk v0.1.0  —  malicious_model.bin
 
 Every scanner implements a single trait and is a **pure function of the artifact**, which
 makes them independently testable, safely parallelizable, and the natural seam for
-community plugins. See [`ARCHITECTURE.md`](ARCHITECTURE.md).
+community plugins. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ```
 tensorhawk/
@@ -173,7 +173,7 @@ what exists versus what's planned.
 - **v2.0:** optional ML-assisted detectors (backdoor/trigger heuristics, memorization
   indicators) behind a clearly-labelled `--experimental` flag.
 
-Full detail in [`ROADMAP.md`](ROADMAP.md).
+Full detail in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Scope and honest limitations
 
@@ -192,7 +192,7 @@ behavior.
 New scanners and rules are the highest-value contributions. A scanner is ~100 lines
 implementing one trait. Start with [`DEVELOPING.md`](DEVELOPING.md) for a from-scratch
 build/run/test setup, then see [`CONTRIBUTING.md`](CONTRIBUTING.md) and
-[`ARCHITECTURE.md`](ARCHITECTURE.md).
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Security
 
