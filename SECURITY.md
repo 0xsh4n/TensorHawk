@@ -7,7 +7,7 @@ it crash, hang, exhaust memory, or execute code while scanning an artifact, plea
 report it privately.
 
 - Use GitHub's **"Report a vulnerability"** (Security → Advisories) on this repo, or
-- Email **security@your-org.example** with steps to reproduce and a sample artifact.
+- Email **mr-sh4n@tuta.io** with steps to reproduce and a sample artifact.
 
 Please do not open a public issue for undisclosed vulnerabilities. We aim to
 acknowledge reports within 3 business days.
