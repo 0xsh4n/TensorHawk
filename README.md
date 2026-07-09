@@ -143,7 +143,7 @@ TensorHawk v0.1.0  —  malicious_model.bin
 
 Every scanner implements a single trait and is a **pure function of the artifact**, which
 makes them independently testable, safely parallelizable, and the natural seam for
-community plugins. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+community plugins. See [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ```
 tensorhawk/
