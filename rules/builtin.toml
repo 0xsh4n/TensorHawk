@@ -1,0 +1,37 @@
+# TensorHawk declarative rule pack (schema v0).
+#
+# In v0.1 the built-in detections are compiled into the scanners. This file is
+# the reference for the declarative rule format that the v0.2 rule engine will
+# load at runtime, so community rule packs can ship without recompiling.
+#
+# Grammar sketch (see docs/ARCHITECTURE.md for the full MODEL_RULE language):
+#
+#   [[rule]]
+#   id        = "THK-XXX-000"     # stable identifier
+#   scanner   = "secrets"          # which engine evaluates `match`
+#   severity  = "critical"         # info|low|medium|high|critical
+#   confidence= 0.95               # 0.0..=1.0
+#   target    = "metadata|raw|pickle"
+#   match     = { regex = "..." }  # or { global = "module.name" } for pickle
+#   references= ["OWASP-LLM06", "CWE-798"]
+#   remediation = "Rotate the credential and rebuild the artifact."
+
+[[rule]]
+id = "THK-SEC-001"
+scanner = "secrets"
+severity = "critical"
+confidence = 0.95
+target = "raw"
+match = { regex = '\b(?:AKIA|ASIA)[0-9A-Z]{16}\b' }
+references = ["OWASP-LLM06", "CWE-798"]
+remediation = "Rotate the AWS key and rebuild the artifact without it."
+
+[[rule]]
+id = "THK-PKL-001"
+scanner = "pickle"
+severity = "critical"
+confidence = 0.97
+target = "pickle"
+match = { global = "os.system" }
+references = ["MITRE-ATLAS-AML.T0010", "CWE-502", "OWASP-LLM05"]
+remediation = "Do not load with pickle; prefer safetensors or weights_only=True."

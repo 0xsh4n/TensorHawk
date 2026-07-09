@@ -1,0 +1,17 @@
+[package]
+name = "tensorhawk-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Core scanning engine for TensorHawk"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+regex.workspace = true
+memmap2.workspace = true
+zip.workspace = true
+walkdir.workspace = true
+anyhow.workspace = true

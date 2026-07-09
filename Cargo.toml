@@ -1,0 +1,31 @@
+[workspace]
+resolver = "2"
+members = ["crates/tensorhawk-core", "crates/tensorhawk-cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+authors = ["The TensorHawk Authors"]
+repository = "https://github.com/your-org/tensorhawk"
+homepage = "https://github.com/your-org/tensorhawk"
+description = "Static security analysis for LLM model artifacts"
+keywords = ["security", "llm", "ai", "static-analysis", "supply-chain"]
+categories = ["command-line-utilities", "development-tools"]
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+regex = "1.10"
+memmap2 = "0.9"
+zip = { version = "0.6", default-features = false, features = ["deflate"] }
+walkdir = "2"
+anyhow = "1"
+clap = { version = "4.4", features = ["derive"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true

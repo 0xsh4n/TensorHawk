@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: test / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Test
+        run: cargo test --all
+      - name: Smoke scan (malicious fixture must be flagged)
+        if: runner.os != 'Windows'
+        run: |
+          cargo build --release
+          # A CRITICAL finding makes tensorhawk exit 1; invert it so CI passes
+          # only when the malicious fixture IS detected.
+          if ./target/release/tensorhawk tests/fixtures/malicious_model.bin --fail-on critical; then
+            echo "::error::malicious fixture was NOT detected"; exit 1
+          else
+            echo "malicious fixture correctly flagged"
+          fi
+
+  msrv:
+    name: msrv (1.75)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.75.0
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --all
