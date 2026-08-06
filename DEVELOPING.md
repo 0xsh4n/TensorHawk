@@ -118,16 +118,20 @@ tensorhawk/
 ├── crates/
 │   ├── tensorhawk-core/    # the engine (library)
 │   │   ├── src/
-│   │   │   ├── lib.rs          # public API: analyze(), analyze_with()
-│   │   │   ├── artifact.rs     # mmap load + GGUF/safetensors/zip parsing
-│   │   │   ├── format.rs       # magic-byte format detection
-│   │   │   ├── finding.rs      # Severity, Finding, redact()
-│   │   │   ├── report.rs       # risk score + JSON/SARIF/human output
-│   │   │   └── scanners/       # pickle, secrets, pii, metadata, entropy
+│   │   │   ├── lib.rs          # public API: analyze(), analyze_paths(), ScanConfig
+│   │   │   ├── artifact.rs     # mmap load + GGUF/safetensors/zip/ONNX/TF/npz parsing
+│   │   │   ├── format.rs       # magic-byte + extension format detection
+│   │   │   ├── pb.rs           # minimal protobuf reader (ONNX / TF)
+│   │   │   ├── finding.rs      # Severity, Finding, redact(), fingerprint()
+│   │   │   ├── baseline.rs     # baseline suppression
+│   │   │   ├── report.rs       # risk score + JSON/SARIF/HTML/human output
+│   │   │   ├── rules/          # MODEL_RULE lexer + parser + engine
+│   │   │   └── scanners/       # pickle, secrets, pii, metadata, entropy,
+│   │   │                       #   weights, lineage, experimental
 │   │   └── tests/integration.rs
 │   └── tensorhawk-cli/     # the `tensorhawk` binary (clap CLI)
 │       └── src/main.rs
-├── rules/                  # declarative rule pack reference (v0.2 engine)
+├── rules/                  # bundled MODEL_RULE pack (builtin.model_rule)
 ├── tests/fixtures/         # golden malicious/benign artifacts
 └── .github/workflows/      # ci.yml + release.yml
 ```
@@ -226,9 +230,11 @@ Auto-fix formatting:
 cargo fmt --all
 ```
 
-The test suite currently has 8 tests: 3 pickle-scanner unit tests, 4 end-to-end
-integration tests over the fixtures, and 1 doctest on the public API. A green
-`cargo test --all` plus the two gates above means CI will pass.
+The test suite currently has 27 tests: 16 unit tests (pickle, rules parser +
+engine, protobuf reader, weights, experimental — including fuzz-style
+robustness sweeps), 10 end-to-end integration tests over the fixtures, and 1
+doctest on the public API. A green `cargo test --all` plus the two gates above
+means CI will pass.
 
 ---
 

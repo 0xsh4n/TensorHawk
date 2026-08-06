@@ -168,6 +168,28 @@ fn scan_stream(component: &str, bytes: &[u8]) -> Vec<Finding> {
     findings
 }
 
+/// Imports resolved from a pickle stream, plus whether a REDUCE-style
+/// construction opcode was present. Exposed so the declarative rule engine can
+/// reuse the same disassembler the built-in scanner relies on.
+pub struct PickleImports {
+    pub imports: Vec<(String, String)>,
+    pub has_reduce: bool,
+}
+
+/// Disassemble a pickle stream and return its `(module, name)` imports and
+/// whether it contains a REDUCE/build opcode.
+pub fn imported_globals(bytes: &[u8]) -> PickleImports {
+    let d = disassemble(bytes);
+    PickleImports {
+        imports: d
+            .imports
+            .into_iter()
+            .map(|i| (i.module, i.name))
+            .collect(),
+        has_reduce: d.has_reduce,
+    }
+}
+
 struct Import {
     module: String,
     name: String,
@@ -536,5 +558,25 @@ mod tests {
         let b = b"\x80\x04ctorch\nFloatStorage\nq\x00.";
         let findings = scan_stream("archive:data.pkl", b);
         assert!(findings.iter().all(|f| f.severity < Severity::High));
+    }
+
+    /// The disassembler parses hostile input, so it must never panic or hang on
+    /// arbitrary bytes. Sweep a large pseudo-random corpus as a fuzz gate.
+    #[test]
+    fn disassemble_never_panics_on_random_input() {
+        let mut state = 0x1234_5678_9abc_def0u64;
+        let mut next = || {
+            // xorshift64
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for _ in 0..2000 {
+            let len = (next() % 512) as usize;
+            let buf: Vec<u8> = (0..len).map(|_| (next() & 0xff) as u8).collect();
+            let _ = disassemble(&buf);
+            let _ = imported_globals(&buf);
+        }
     }
 }

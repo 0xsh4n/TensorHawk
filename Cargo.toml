@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/tensorhawk-core", "crates/tensorhawk-cli"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "Apache-2.0"
 rust-version = "1.75"  
@@ -22,6 +22,7 @@ memmap2 = "0.9"
 zip = { version = "0.6", default-features = false, features = ["deflate"] }
 walkdir = "2"
 anyhow = "1"
+rayon = "1.8"
 clap = { version = "4.4", features = ["derive"] }
 
 [profile.release]

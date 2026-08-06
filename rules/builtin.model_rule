@@ -1,0 +1,106 @@
+# TensorHawk bundled reference rule pack (MODEL_RULE language, schema v1).
+#
+# These detections ship as *data* and are compiled into the binary via the
+# rule engine (crates/tensorhawk-core/src/rules). They cover surfaces the
+# compiled scanners do not — chiefly ONNX / TensorFlow graph operators — plus a
+# few additional credential patterns. See docs/ARCHITECTURE.md for the grammar,
+# and load your own packs with `tensorhawk --rules <dir>`.
+
+# --- TensorFlow: operators that execute arbitrary Python at inference -------
+
+MODEL_RULE tf_pyfunc {
+    meta:
+        id          = "THK-OPS-001"
+        title       = "TensorFlow PyFunc operator runs arbitrary Python"
+        severity    = critical
+        confidence  = 0.9
+        reference   = "MITRE-ATLAS: AML.T0010 ML Supply Chain Compromise"
+        reference   = "CWE-94: Improper Control of Generation of Code"
+        remediation = "Rebuild the SavedModel without tf.py_function / Lambda layers; PyFunc ops execute arbitrary Python when the graph runs."
+    target:
+        operators
+    condition:
+        op("PyFunc*")
+}
+
+MODEL_RULE tf_eager_pyfunc {
+    meta:
+        id          = "THK-OPS-001"
+        title       = "TensorFlow EagerPyFunc operator runs arbitrary Python"
+        severity    = critical
+        confidence  = 0.9
+        reference   = "MITRE-ATLAS: AML.T0010 ML Supply Chain Compromise"
+        reference   = "CWE-94: Improper Control of Generation of Code"
+        remediation = "Rebuild the SavedModel without tf.py_function / Lambda layers."
+    target:
+        operators
+    condition:
+        op("EagerPyFunc")
+}
+
+# --- TensorFlow: operators that touch the filesystem at inference -----------
+
+MODEL_RULE tf_file_io {
+    meta:
+        id          = "THK-OPS-002"
+        title       = "TensorFlow filesystem operator in graph"
+        severity    = medium
+        confidence  = 0.6
+        reference   = "MITRE-ATLAS: AML.T0010 ML Supply Chain Compromise"
+        reference   = "CWE-73: External Control of File Name or Path"
+        remediation = "Confirm the graph legitimately needs file I/O; ReadFile/WriteFile in a shipped model can exfiltrate or overwrite data."
+    target:
+        operators
+    condition:
+        op("ReadFile") or op("WriteFile") or op("MergeV2Checkpoints")
+}
+
+# --- ONNX: custom-domain operators are non-standard and warrant review ------
+
+MODEL_RULE onnx_custom_operator {
+    meta:
+        id         = "THK-OPS-003"
+        title      = "Custom-domain ONNX operator"
+        severity   = low
+        confidence = 0.5
+        reference  = "OWASP-LLM05: Supply Chain Vulnerabilities"
+    target:
+        operators
+    strings:
+        $c = /^(?:com\.microsoft|ai\.onnx\.contrib|ai\.onnx\.preview|org\.pytorch)\./
+    condition:
+        $c
+}
+
+# --- Additional credential pattern (complements the `secrets` scanner) ------
+
+MODEL_RULE huggingface_token {
+    meta:
+        id          = "THK-SEC-020"
+        title       = "Hugging Face access token"
+        severity    = high
+        confidence  = 0.85
+        reference   = "OWASP-LLM06: Sensitive Information Disclosure"
+        reference   = "CWE-798: Use of Hard-coded Credentials"
+        remediation = "Rotate the Hugging Face token and rebuild the artifact without it."
+    target:
+        metadata, raw
+    strings:
+        $t = /\bhf_[A-Za-z0-9]{34,40}\b/
+    condition:
+        $t
+}
+
+# --- Example pickle rule (documentation; the compiled `pickle` scanner
+#     already covers this, so it is left commented out to avoid duplicate
+#     findings) -------------------------------------------------------------
+#
+# MODEL_RULE pickle_os_system {
+#     meta:
+#         id       = "THK-PKL-001"
+#         severity = critical
+#     target:
+#         pickle
+#     condition:
+#         import("os.system") or (import("subprocess.") and opcode(REDUCE))
+# }

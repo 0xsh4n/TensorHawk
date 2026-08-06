@@ -29,7 +29,7 @@ privacy, and provenance risks before the model reaches a runtime.
 
 It does **not** execute the model, does **not** call the network, and does **not** need a GPU.
 
-## What it catches today (v0.1)
+## What it catches today (v0.2)
 
 | Scanner | Detects |
 | --- | --- |
@@ -38,10 +38,13 @@ It does **not** execute the model, does **not** call the network, and does **not
 | `pii` | Emails, credit cards (Luhn-validated), SSN, Aadhaar, PAN, IBAN leaked into metadata |
 | `metadata` | Absolute build paths (username/host leaks), internal URLs, cloud/infra identifiers, provenance |
 | `entropy` | High-entropy blobs hidden inside pickle object graphs (packed/encrypted second-stage payloads) |
+| `weights` | Tensor shape × dtype byte-size mismatches, non-finite (NaN/Inf) weights, fully-zeroed and duplicate tensors, dtype/shape-overflow anomalies |
+| `lineage` | LoRA / PEFT adapters, declared base model, quantization/conversion ancestry |
+| `rules` | Declarative **MODEL_RULE** detections — including dangerous graph operators (TensorFlow `PyFunc` → arbitrary Python, file-I/O ops, custom-domain ONNX ops) and extra credential patterns |
 
-**Formats:** GGUF · safetensors · PyTorch ZIP (`.bin`/`.pt`/`.pth`/`.ckpt`) · legacy pickle. ONNX / TF / MLX parsing is on the roadmap.
+**Formats:** GGUF · safetensors · PyTorch ZIP (`.bin`/`.pt`/`.pth`/`.ckpt`) · legacy pickle · **ONNX** · **TensorFlow** SavedModel/GraphDef · **MLX / NumPy `.npz`** (object arrays are routed to the pickle scanner).
 
-Findings are scored by severity × confidence, mapped to **OWASP LLM Top 10**, **MITRE ATLAS**, and **CWE**, and can be emitted as **SARIF** for GitHub code scanning.
+Detections ship as **data**: the `MODEL_RULE` engine loads a bundled rule pack and any packs you pass with `--rules <dir>` — see [`docs/RULES.md`](docs/RULES.md) to write your own. Findings are scored by severity × confidence, mapped to **OWASP LLM Top 10**, **MITRE ATLAS**, and **CWE**, and can be emitted as **SARIF** for GitHub code scanning or a self-contained **HTML** report.
 
 ## Install
 
@@ -82,15 +85,26 @@ tensorhawk ./models --recursive --fail-on high
 # machine-readable output
 tensorhawk model.bin --format json  > report.json
 tensorhawk model.bin --format sarif > report.sarif
+tensorhawk model.bin --format html  --output report.html
 
 # only show medium and above
 tensorhawk model.bin --min-severity medium
+
+# load extra declarative rule packs
+tensorhawk model.onnx --rules ./my-rules
+
+# adopt on a noisy repo: capture a baseline, then fail only on NEW findings
+tensorhawk ./models --recursive --write-baseline tensorhawk.baseline.json
+tensorhawk ./models --recursive --baseline tensorhawk.baseline.json --fail-on high
+
+# opt into experimental, heuristic research detectors (probabilistic)
+tensorhawk model.safetensors --experimental
 ```
 
 Example run against a booby-trapped checkpoint:
 
 ```
-TensorHawk v0.1.0  —  malicious_model.bin
+TensorHawk v0.2.0  —  malicious_model.bin
   format: pytorch-zip   size: 178 B   risk score: 62/100
 
   CRITICAL  Dangerous pickle import: posix.system  (97% conf)
@@ -149,9 +163,14 @@ community plugins. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 tensorhawk/
 ├── crates/
 │   ├── tensorhawk-core/     # engine: formats, scanners, findings, reports
-│   │   └── src/scanners/    # pickle, secrets, pii, metadata, entropy
+│   │   └── src/
+│   │       ├── scanners/    # pickle, secrets, pii, metadata, entropy,
+│   │       │                #   weights, lineage, experimental
+│   │       ├── rules/       # MODEL_RULE lexer + parser + engine
+│   │       ├── pb.rs        # minimal protobuf reader (ONNX / TF)
+│   │       └── baseline.rs  # finding suppression
 │   └── tensorhawk-cli/      # `tensorhawk` binary
-├── rules/                   # declarative rule packs (roadmap: full rule language)
+├── rules/                   # declarative rule packs (builtin.model_rule)
 ├── tests/fixtures/          # golden malicious/benign artifacts
 └── .github/workflows/       # CI + multi-platform release automation
 ```
@@ -163,15 +182,19 @@ what exists versus what's planned.
 
 - **v0.1 — MVP (shipped):** pickle/secrets/pii/metadata/entropy scanners; GGUF, safetensors,
   PyTorch pickle; human/JSON/SARIF output; CI gate; multi-platform releases.
-- **v0.2:** ONNX + TensorFlow + MLX parsing; declarative `MODEL_RULE` language with a parser
-  and a bundled rule pack; parallel scanning across scanners and files; HTML report.
-- **v0.3:** weight-integrity scanner (tensor shape/dtype/entropy anomalies, hash validation);
-  LoRA/adapter lineage; supply-chain/ancestry graph.
-- **v0.4:** streaming analysis for >100 GB artifacts without full load; SIMD-accelerated
-  regex/entropy; Python SDK (`pip install tensorhawk`).
-- **v1.0:** stable plugin ABI + Plugin SDK; signed rule packs; reproducible-build attestation.
-- **v2.0:** optional ML-assisted detectors (backdoor/trigger heuristics, memorization
-  indicators) behind a clearly-labelled `--experimental` flag.
+- **v0.2 — Rules & formats (shipped):** ONNX + TensorFlow + MLX/`.npz` parsing; the declarative
+  `MODEL_RULE` engine with a bundled pack and `--rules`; graph-operator detections; parallel
+  scanning; HTML report; `--baseline` suppression; merged SARIF.
+- **v0.3 — Weights & lineage (shipped):** `weights` integrity scanner (shape/dtype/size,
+  NaN/Inf, zeroed/duplicate tensors) and `lineage` scanner (LoRA/PEFT adapters, base model,
+  quant/convert ancestry).
+- **v0.4 — Scale & SDKs (partial):** parallel batch scanning and bounded memory shipped;
+  streaming >100 GB, SIMD, and the Python SDK are still open.
+- **v1.0 — Stable platform (partial):** fuzz-style robustness gates shipped; stable plugin ABI,
+  signed rule packs, and reproducible-build attestation are still open.
+- **v2.0 — Research detectors (experimental, partial):** a heuristic weight-outlier backdoor
+  indicator ships behind `--experimental`; memorization/trigger signals are still open. Anything
+  here is clearly labelled probabilistic and never presented as ground truth.
 
 Full detail in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
@@ -190,9 +213,10 @@ behavior.
 ## Contributing
 
 New scanners and rules are the highest-value contributions. A scanner is ~100 lines
-implementing one trait. Start with [`DEVELOPING.md`](DEVELOPING.md) for a from-scratch
-build/run/test setup, then see [`CONTRIBUTING.md`](CONTRIBUTING.md) and
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+implementing one trait — or you can add a detection with **no code at all** by writing a
+[`MODEL_RULE`](docs/RULES.md) pack. Start with [`DEVELOPING.md`](DEVELOPING.md) for a
+from-scratch build/run/test setup, then see [`CONTRIBUTING.md`](CONTRIBUTING.md),
+[`docs/RULES.md`](docs/RULES.md), and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Security
 

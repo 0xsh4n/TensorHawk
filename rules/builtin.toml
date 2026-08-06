@@ -1,8 +1,10 @@
-# TensorHawk declarative rule pack (schema v0).
+# TensorHawk declarative rule pack — LEGACY TOML sketch (schema v0).
 #
-# In v0.1 the built-in detections are compiled into the scanners. This file is
-# the reference for the declarative rule format that the v0.2 rule engine will
-# load at runtime, so community rule packs can ship without recompiling.
+# NOTE: as of v0.2 the shipped rule engine uses the `MODEL_RULE` language, not
+# this TOML. The bundled, active pack is `rules/builtin.model_rule`, loaded by
+# crates/tensorhawk-core/src/rules. This file is retained only as an early
+# reference for the rule *concept* (id / scanner / severity / target / match).
+# Load real packs with `tensorhawk --rules <dir>` using `*.model_rule` files.
 #
 # Grammar sketch (see docs/ARCHITECTURE.md for the full MODEL_RULE language):
 #

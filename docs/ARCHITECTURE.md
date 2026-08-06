@@ -15,18 +15,26 @@
 ```
 file ─▶ Artifact::load
           ├─ mmap (zero-copy, handles multi-GB files)
-          ├─ format::detect (magic bytes + structure)
+          ├─ format::detect (magic bytes + extension + structure)
           └─ structural parse per format:
-               GGUF          → header + metadata KV (bounds-checked)
-               safetensors   → u64 header len + JSON __metadata__
+               GGUF          → header + metadata KV + tensor descriptors
+               safetensors   → u64 header len + JSON __metadata__ + tensors
                PyTorch ZIP   → enumerate pickle streams
                legacy pickle → whole file is one stream
+               ONNX          → protobuf: producer, metadata, graph operators
+               TensorFlow    → protobuf: harvested operators + strings
+               npz (MLX)     → per-array dtype/shape; object arrays → pickle
        ▼
-   for scanner in registry: scanner.scan(&artifact)   (read-only &Artifact)
+   scanners run in parallel (rayon), each a read-only fn(&Artifact) -> Vec<Finding>
+     built-ins: pickle secrets pii metadata entropy weights lineage
+     rules:     the MODEL_RULE engine (bundled pack + optional --rules dir)
+     optional:  experimental detectors (behind --experimental)
+       ▼
+   Baseline::apply (optional) suppresses accepted fingerprints
        ▼
    Report::new  → sort by severity×confidence
                 → aggregate 0–100 risk score (diminishing returns)
-                → render human / JSON / SARIF
+                → render human / JSON / SARIF / HTML
 ```
 
 The `Artifact` struct is the single shared, read-only view every scanner sees:
@@ -40,8 +48,14 @@ pub struct Artifact {
     pub metadata: Vec<(String,String)>,
     pub pickles: Vec<PickleStream>,  // name + bytes
     pub tensor_count: Option<u64>,
+    pub tensors: Vec<TensorDesc>,    // name, dtype, shape, exact byte range
+    pub graph_ops: Vec<String>,      // ONNX / TF operator kinds
 }
 ```
+
+Parsers that consume untrusted, schema-less input (the ONNX/TF protobuf reader
+in `pb.rs`) are bounds-checked, depth-bounded, and budget-bounded so a hostile
+message cannot cause unbounded recursion, allocation, or out-of-bounds reads.
 
 ## Threat model
 
@@ -61,6 +75,9 @@ hub account, a malicious fine-tuner, an insider).
 | T4 | PII / privacy leak | personal data in metadata | `pii` |
 | T5 | Infra fingerprinting | build paths, internal URLs, cloud IDs | `metadata` |
 | T6 | Hidden second-stage payload | packed/encrypted blob in object graph | `entropy` |
+| T7 | Code execution via graph op | TF `PyFunc` / custom operators | `rules` (`operators`) |
+| T8 | Tampered / poisoned weights | shape·dtype·size mismatch, NaN/Inf, zeroed | `weights` |
+| T9 | Unclear chain of custody | LoRA delta, quant/convert ancestry | `lineage` |
 
 **Explicit non-goals (v0.1):** behavioral/runtime analysis, proving a model is
 backdoor-free, or proving training-data provenance. Those are research problems and
@@ -70,11 +87,16 @@ will be shipped only behind an `--experimental` flag with clear confidence cavea
 attack surface. Mitigations: length-capped header fields, bounds-checked cursors,
 a bounded pickle shadow-stack, `panic = "abort"`, and fuzz targets on the roadmap.
 
-## The `MODEL_RULE` language (v0.2)
+## The `MODEL_RULE` language (v0.2, shipped)
 
 A YARA-inspired, declarative rule format so detections ship as data, not code.
-Compiled built-ins in v0.1 are the reference semantics; the runtime loader lands in
-v0.2. Sketch:
+The runtime loader (lexer + recursive-descent / Pratt parser) lives in
+`crates/tensorhawk-core/src/rules`; a bundled reference pack
+(`rules/builtin.model_rule`) is embedded in the binary and evaluated on every
+scan, and `--rules <dir>` layers in user packs. Targets are `metadata`, `raw`,
+`pickle`, and `operators`; condition terms are `$var`, `import("module.name")`,
+`opcode(REDUCE)`, and `op("OpType")` combined with `and`/`or`/`not`. The
+authoring guide is [`RULES.md`](RULES.md). Sketch:
 
 ```
 MODEL_RULE aws_key {
@@ -110,7 +132,8 @@ target      = "target:" ident ("," ident)* ;
 strings     = "strings:" (var "=" (regex | string))+ ;
 condition   = "condition:" expr ;
 expr        = term (("and"|"or") term)* ;
-term        = var | "import" "(" string ")" | "opcode" "(" ident ")" | "(" expr ")" | "not" term ;
+term        = var | "import" "(" string ")" | "opcode" "(" ident ")"
+            | "op" "(" string ")" | "(" expr ")" | "not" term ;
 ```
 
 The parser is a hand-written recursive-descent tokenizer + Pratt expression parser;

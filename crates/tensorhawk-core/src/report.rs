@@ -116,6 +116,58 @@ impl Report {
         serde_json::to_string_pretty(&doc).unwrap_or_default()
     }
 
+    /// A single-file HTML report fragment (the `<section>` for this artifact).
+    fn to_html_section(&self) -> String {
+        let mut out = String::new();
+        out.push_str(&format!(
+            "<section class=\"report\">\n<h2>{}</h2>\n<p class=\"meta\">format <code>{}</code> · \
+             size {} · risk score <span class=\"score score-{}\">{}/100</span></p>\n",
+            esc(&self.target),
+            esc(&self.format),
+            human_bytes(self.bytes),
+            score_class(self.risk_score),
+            self.risk_score,
+        ));
+        out.push_str(&format!(
+            "<p class=\"summary\">{} critical · {} high · {} medium · {} low · {} info</p>\n",
+            self.summary.critical,
+            self.summary.high,
+            self.summary.medium,
+            self.summary.low,
+            self.summary.info
+        ));
+        if self.findings.is_empty() {
+            out.push_str("<p class=\"clean\">✓ no findings</p>\n</section>\n");
+            return out;
+        }
+        out.push_str("<table>\n<thead><tr><th>Severity</th><th>Finding</th><th>Rule</th>\
+                      <th>Location</th><th>Conf.</th><th>Evidence</th></tr></thead>\n<tbody>\n");
+        for f in &self.findings {
+            out.push_str(&format!(
+                "<tr class=\"sev-{sev}\"><td><span class=\"pill pill-{sev}\">{sevu}</span></td>\
+                 <td><strong>{title}</strong><br><span class=\"detail\">{detail}</span></td>\
+                 <td><code>{rule}</code><br><span class=\"scanner\">{scanner}</span></td>\
+                 <td><code>{loc}</code></td><td>{conf:.0}%</td><td>{ev}</td></tr>\n",
+                sev = f.severity.as_str(),
+                sevu = f.severity.as_str().to_uppercase(),
+                title = esc(&f.title),
+                detail = esc(&f.detail),
+                rule = esc(&f.rule_id),
+                scanner = esc(&f.scanner),
+                loc = esc(&f.location.component),
+                conf = f.confidence * 100.0,
+                ev = f.evidence.as_deref().map(esc).unwrap_or_default(),
+            ));
+        }
+        out.push_str("</tbody>\n</table>\n</section>\n");
+        out
+    }
+
+    /// A complete, self-contained HTML document for a single report.
+    pub fn to_html(&self) -> String {
+        render_html_document(std::slice::from_ref(self))
+    }
+
     /// Human-readable terminal report with ANSI colour.
     pub fn to_human(&self, color: bool) -> String {
         let c = Palette::new(color);
@@ -178,6 +230,103 @@ impl Report {
         ));
         out
     }
+}
+
+/// Render one SARIF 2.1.0 document covering many reports as separate results,
+/// with each artifact distinguished by its `artifactLocation`. Suitable for a
+/// directory scan uploaded to GitHub code scanning as a single run.
+pub fn merged_sarif(reports: &[Report]) -> String {
+    let mut results = Vec::new();
+    for r in reports {
+        for f in &r.findings {
+            results.push(serde_json::json!({
+                "ruleId": f.rule_id,
+                "level": f.severity.sarif_level(),
+                "message": { "text": format!("{}: {}", f.title, f.detail) },
+                "properties": {
+                    "scanner": f.scanner,
+                    "confidence": f.confidence,
+                    "severity": f.severity.as_str(),
+                    "references": f.references,
+                },
+                "locations": [{
+                    "physicalLocation": {
+                        "artifactLocation": { "uri": r.target },
+                        "logicalLocations": [{ "name": f.location.component }],
+                    }
+                }],
+            }));
+        }
+    }
+    let doc = serde_json::json!({
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [{
+            "tool": { "driver": {
+                "name": "TensorHawk",
+                "informationUri": "https://github.com/0xsh4n/TensorHawk",
+                "version": VERSION,
+                "rules": [],
+            }},
+            "results": results,
+        }],
+    });
+    serde_json::to_string_pretty(&doc).unwrap_or_default()
+}
+
+/// Render a complete HTML document for one or more reports.
+pub fn render_html_document(reports: &[Report]) -> String {
+    let mut sections = String::new();
+    for r in reports {
+        sections.push_str(&r.to_html_section());
+    }
+    let total: usize = reports.iter().map(|r| r.findings.len()).sum();
+    format!(
+        "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n\
+         <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n\
+         <title>TensorHawk report</title>\n<style>{CSS}</style>\n</head>\n<body>\n\
+         <header><h1>🦅 TensorHawk</h1>\
+         <p>v{VERSION} · {n} artifact(s) · {total} finding(s)</p></header>\n\
+         {sections}\n<footer>Generated by TensorHawk v{VERSION} — static, offline analysis.</footer>\n\
+         </body>\n</html>\n",
+        n = reports.len(),
+    )
+}
+
+const CSS: &str = "\
+:root{color-scheme:light dark;--bg:#0f1115;--fg:#e6e6e6;--muted:#9aa0a6;--card:#171a21;--border:#2a2f3a;}\
+@media(prefers-color-scheme:light){:root{--bg:#f7f7f8;--fg:#1a1a1a;--muted:#666;--card:#fff;--border:#e2e2e2;}}\
+*{box-sizing:border-box}body{margin:0;font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--fg);padding:0 0 3rem}\
+header{padding:1.5rem 2rem;border-bottom:1px solid var(--border)}header h1{margin:0 0 .25rem}header p{margin:0;color:var(--muted)}\
+section.report{margin:1.5rem 2rem;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:1rem 1.25rem}\
+h2{margin:.2rem 0;font-size:1.1rem;word-break:break-all}.meta,.summary{color:var(--muted);margin:.25rem 0}\
+.score{font-weight:700}.score-low{color:#3fb950}.score-med{color:#d29922}.score-high{color:#f85149}\
+.clean{color:#3fb950;font-weight:600}\
+table{width:100%;border-collapse:collapse;margin-top:.75rem;font-size:.92rem}\
+th,td{text-align:left;padding:.5rem .6rem;border-bottom:1px solid var(--border);vertical-align:top}\
+th{color:var(--muted);font-weight:600;font-size:.8rem;text-transform:uppercase;letter-spacing:.03em}\
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.85em}\
+.detail{color:var(--muted);font-size:.88rem}.scanner{color:var(--muted);font-size:.8rem}\
+.pill{display:inline-block;padding:.1rem .5rem;border-radius:999px;font-size:.72rem;font-weight:700;color:#fff}\
+.pill-critical{background:#f85149}.pill-high{background:#db61a2}.pill-medium{background:#d29922}\
+.pill-low{background:#388bfd}.pill-info{background:#6e7681}\
+footer{margin:2rem;color:var(--muted);font-size:.85rem}\
+";
+
+fn score_class(score: u32) -> &'static str {
+    match score {
+        0..=19 => "low",
+        20..=59 => "med",
+        _ => "high",
+    }
+}
+
+/// Minimal HTML escaping for text interpolated into the report.
+fn esc(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 fn human_bytes(n: u64) -> String {

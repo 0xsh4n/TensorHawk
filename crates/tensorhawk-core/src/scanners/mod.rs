@@ -9,10 +9,13 @@ use crate::artifact::Artifact;
 use crate::finding::Finding;
 
 pub mod entropy;
+pub mod experimental;
+pub mod lineage;
 pub mod metadata;
 pub mod pickle;
 pub mod pii;
 pub mod secrets;
+pub mod weights;
 
 pub trait Scanner: Send + Sync {
     /// Stable short identifier, e.g. `pickle`.
@@ -30,5 +33,8 @@ pub fn builtin_scanners() -> Vec<Box<dyn Scanner>> {
         Box::new(pii::PiiScanner::new()),
         Box::new(metadata::MetadataScanner::new()),
         Box::new(entropy::EntropyScanner),
+        Box::new(weights::WeightScanner),
+        Box::new(lineage::LineageScanner::new()),
+        Box::new(crate::rules::builtin_rules()),
     ]
 }

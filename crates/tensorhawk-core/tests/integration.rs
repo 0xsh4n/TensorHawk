@@ -1,7 +1,7 @@
 //! End-to-end tests over the checked-in fixture artifacts.
 
 use std::path::PathBuf;
-use tensorhawk_core::{analyze, Severity};
+use tensorhawk_core::{analyze, Baseline, Severity};
 
 fn fixture(name: &str) -> PathBuf {
     // crate dir -> ../../tests/fixtures
@@ -48,4 +48,83 @@ fn gguf_metadata_is_parsed() {
     let report = analyze(&fixture("model.gguf")).expect("scan");
     assert_eq!(report.format, "gguf");
     assert!(report.findings.iter().any(|f| f.rule_id == "THK-MET-000"));
+}
+
+#[test]
+fn onnx_custom_operator_and_token_flagged() {
+    let report = analyze(&fixture("model.onnx")).expect("scan");
+    assert_eq!(report.format, "onnx");
+    // Custom-domain operator via the declarative rule engine.
+    assert!(report.findings.iter().any(|f| f.rule_id == "THK-OPS-003"));
+    // Hugging Face token embedded in metadata, matched by a MODEL_RULE.
+    let hf = report
+        .findings
+        .iter()
+        .find(|f| f.rule_id == "THK-SEC-020")
+        .expect("hf token finding");
+    assert_eq!(hf.severity, Severity::High);
+    // Rule-engine evidence for credential surfaces must be redacted, never the
+    // full secret.
+    let ev = hf.evidence.as_ref().unwrap();
+    assert!(ev.contains('…'), "evidence should be redacted: {ev}");
+    assert!(!ev.contains("AAAAAAAAAAAAAAAA"), "full token leaked: {ev}");
+}
+
+#[test]
+fn tensorflow_pyfunc_is_critical() {
+    let report = analyze(&fixture("tf_pyfunc.pb")).expect("scan");
+    assert_eq!(report.format, "tensorflow");
+    assert!(report
+        .findings
+        .iter()
+        .any(|f| f.rule_id == "THK-OPS-001" && f.severity == Severity::Critical));
+}
+
+#[test]
+fn npz_object_array_routes_to_pickle_scanner() {
+    let report = analyze(&fixture("object_array.npz")).expect("scan");
+    assert_eq!(report.format, "npz");
+    // The pickled object array reduces to os.system → critical pickle finding.
+    assert_eq!(report.worst(), Some(Severity::Critical));
+    assert!(report
+        .findings
+        .iter()
+        .any(|f| f.scanner == "pickle" && f.severity == Severity::Critical));
+}
+
+#[test]
+fn safetensors_weight_and_lineage_signals() {
+    let report = analyze(&fixture("adapter.safetensors")).expect("scan");
+    assert_eq!(report.format, "safetensors");
+    // Weight-integrity: byte-size mismatch and a non-finite value.
+    assert!(report.findings.iter().any(|f| f.rule_id == "THK-WGT-001"));
+    assert!(report.findings.iter().any(|f| f.rule_id == "THK-WGT-002"));
+    // Lineage: LoRA adapter, declared base model, quantization ancestry.
+    assert!(report.findings.iter().any(|f| f.rule_id == "THK-LIN-001"));
+    assert!(report.findings.iter().any(|f| f.rule_id == "THK-LIN-002"));
+    assert!(report.findings.iter().any(|f| f.rule_id == "THK-LIN-003"));
+}
+
+#[test]
+fn baseline_suppresses_known_findings() {
+    let report = analyze(&fixture("malicious_model.bin")).expect("scan");
+    assert!(!report.findings.is_empty());
+    // A baseline built from this report should suppress every finding.
+    let baseline = Baseline::from_reports(std::slice::from_ref(&report));
+    let mut again = analyze(&fixture("malicious_model.bin")).expect("scan");
+    let suppressed = baseline.apply(&mut again);
+    assert_eq!(suppressed, report.findings.len());
+    assert!(again.findings.is_empty());
+    assert_eq!(again.risk_score, 0);
+}
+
+#[test]
+fn html_report_is_self_contained() {
+    let report = analyze(&fixture("malicious_model.bin")).expect("scan");
+    let html = report.to_html();
+    assert!(html.starts_with("<!doctype html>"));
+    assert!(html.contains("TensorHawk"));
+    // No external resource references (fully offline / self-contained).
+    assert!(!html.contains("http://"));
+    assert!(!html.contains("src=\"http"));
 }

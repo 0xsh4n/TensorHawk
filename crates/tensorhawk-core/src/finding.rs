@@ -95,6 +95,26 @@ pub struct Finding {
 }
 
 impl Finding {
+    /// A stable fingerprint for baseline suppression: identifies the finding by
+    /// what it is and where, independent of scan ordering or run. Two findings
+    /// with the same fingerprint are considered "the same known issue".
+    pub fn fingerprint(&self) -> String {
+        let mut h = 0xcbf29ce484222325u64;
+        let mut mix = |s: &str| {
+            for b in s.bytes() {
+                h ^= b as u64;
+                h = h.wrapping_mul(0x100000001b3);
+            }
+            h ^= 0xff;
+            h = h.wrapping_mul(0x100000001b3);
+        };
+        mix(&self.rule_id);
+        mix(&self.scanner);
+        mix(&self.location.component);
+        mix(self.evidence.as_deref().unwrap_or(""));
+        format!("{h:016x}")
+    }
+
     pub fn builder(rule_id: &str, scanner: &str, severity: Severity) -> FindingBuilder {
         FindingBuilder {
             f: Finding {

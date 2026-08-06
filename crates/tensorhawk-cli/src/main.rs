@@ -4,13 +4,15 @@ use anyhow::Result;
 use clap::{Parser, ValueEnum};
 use std::io::Write;
 use std::path::PathBuf;
-use tensorhawk_core::{analyze, Severity};
+use tensorhawk_core::report::{merged_sarif, render_html_document};
+use tensorhawk_core::{analyze_paths, Baseline, Report, ScanConfig, Severity};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
 enum OutputFormat {
     Human,
     Json,
     Sarif,
+    Html,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
@@ -65,13 +67,41 @@ struct Cli {
     /// Disable ANSI colour in human output.
     #[arg(long)]
     no_color: bool,
+
+    /// Load additional declarative MODEL_RULE packs from this directory.
+    #[arg(long, value_name = "DIR")]
+    rules: Option<PathBuf>,
+
+    /// Suppress findings listed in this baseline file (JSON).
+    #[arg(long, value_name = "FILE")]
+    baseline: Option<PathBuf>,
+
+    /// Write a baseline capturing all current findings to this file and exit 0.
+    #[arg(long, value_name = "FILE")]
+    write_baseline: Option<PathBuf>,
+
+    /// Enable experimental, heuristic research detectors (probabilistic).
+    #[arg(long)]
+    experimental: bool,
 }
 
 fn is_candidate(p: &std::path::Path) -> bool {
+    let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let name = p.file_name().and_then(|e| e.to_str()).unwrap_or("");
     matches!(
-        p.extension().and_then(|e| e.to_str()).unwrap_or(""),
-        "gguf" | "ggml" | "safetensors" | "bin" | "pt" | "pth" | "ckpt" | "onnx" | "pkl"
-    )
+        ext,
+        "gguf"
+            | "ggml"
+            | "safetensors"
+            | "bin"
+            | "pt"
+            | "pth"
+            | "ckpt"
+            | "onnx"
+            | "pkl"
+            | "pb"
+            | "npz"
+    ) || name == "saved_model.pb"
 }
 
 fn collect_targets(cli: &Cli) -> Vec<PathBuf> {
@@ -107,15 +137,46 @@ fn main() -> Result<()> {
         std::process::exit(2);
     }
 
-    let mut reports = Vec::new();
-    for target in &targets {
-        match analyze(target) {
-            Ok(mut report) => {
-                report.findings.retain(|f| f.severity >= min);
-                reports.push(report);
-            }
-            Err(e) => eprintln!("tensorhawk: error scanning {}: {e}", target.display()),
+    let config = ScanConfig {
+        user_rules: cli.rules.clone(),
+        experimental: cli.experimental,
+    };
+
+    // Scan every target (in parallel), preserving order.
+    let mut reports: Vec<Report> = Vec::new();
+    for (path, res) in analyze_paths(&targets, &config) {
+        match res {
+            Ok(report) => reports.push(report),
+            Err(e) => eprintln!("tensorhawk: error scanning {}: {e}", path.display()),
         }
+    }
+
+    // --write-baseline captures current findings and exits before filtering.
+    if let Some(path) = &cli.write_baseline {
+        let baseline = Baseline::from_reports(&reports);
+        std::fs::File::create(path)?.write_all(baseline.to_json().as_bytes())?;
+        eprintln!(
+            "tensorhawk: wrote baseline with {} fingerprint(s) to {}",
+            baseline.fingerprints.len(),
+            path.display()
+        );
+        return Ok(());
+    }
+
+    // Baseline suppression, then min-severity filtering.
+    let baseline = match &cli.baseline {
+        Some(path) => Some(Baseline::load(path)?),
+        None => None,
+    };
+    let mut suppressed = 0usize;
+    for report in &mut reports {
+        if let Some(b) = &baseline {
+            suppressed += b.apply(report);
+        }
+        report.findings.retain(|f| f.severity >= min);
+    }
+    if suppressed > 0 {
+        eprintln!("tensorhawk: suppressed {suppressed} baselined finding(s)");
     }
 
     let rendered = match cli.format {
@@ -131,11 +192,8 @@ fn main() -> Result<()> {
                 serde_json::to_string_pretty(&reports)?
             }
         }
-        OutputFormat::Sarif => {
-            // For multiple targets we emit the first run; a merged SARIF run is
-            // on the roadmap. Single-file is the common CI case.
-            reports.first().map(|r| r.to_sarif()).unwrap_or_default()
-        }
+        OutputFormat::Sarif => merged_sarif(&reports),
+        OutputFormat::Html => render_html_document(&reports),
     };
 
     match &cli.output {

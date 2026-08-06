@@ -12,7 +12,7 @@ name = "tensorhawk"
 path = "src/main.rs"
 
 [dependencies]
-tensorhawk-core = { path = "../tensorhawk-core", version = "0.1.0" }
+tensorhawk-core = { path = "../tensorhawk-core", version = "0.2.0" }
 clap.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true

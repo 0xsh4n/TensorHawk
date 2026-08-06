@@ -40,6 +40,7 @@ the whole contract — no shared state, no I/O, no network.
        fn scan(&self, artifact: &Artifact) -> Vec<Finding> {
            let mut findings = Vec::new();
            // inspect artifact.metadata / artifact.pickles / artifact.data()
+           //         artifact.tensors / artifact.graph_ops
            findings
        }
    }
@@ -50,6 +51,14 @@ the whole contract — no shared state, no I/O, no network.
 
 3. Add a fixture under `tests/fixtures/` and a `#[cfg(test)]` unit test that
    proves both a true positive and that a benign input stays clean.
+
+## Adding a rule (no code)
+
+Many detections don't need a scanner — they're a pattern or an operator name.
+Write a `MODEL_RULE` instead: add it to
+[`rules/builtin.model_rule`](rules/builtin.model_rule) (ships in the binary) or
+to your own pack loaded with `--rules <dir>`. The full language, targets,
+condition terms, and redaction rules are in [`docs/RULES.md`](docs/RULES.md).
 
 ### Finding quality bar
 

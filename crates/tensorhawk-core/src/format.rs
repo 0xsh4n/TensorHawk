@@ -17,6 +17,10 @@ pub enum ModelFormat {
     PyTorchLegacyPickle,
     /// ONNX protobuf.
     Onnx,
+    /// TensorFlow SavedModel protobuf (`saved_model.pb`) or frozen `GraphDef`.
+    TensorFlow,
+    /// MLX / NumPy `.npz` zip of `.npy` arrays.
+    Npz,
     Unknown,
 }
 
@@ -29,6 +33,8 @@ impl ModelFormat {
             ModelFormat::PyTorchZip => "pytorch-zip",
             ModelFormat::PyTorchLegacyPickle => "pytorch-legacy-pickle",
             ModelFormat::Onnx => "onnx",
+            ModelFormat::TensorFlow => "tensorflow",
+            ModelFormat::Npz => "npz",
             ModelFormat::Unknown => "unknown",
         }
     }
@@ -47,24 +53,41 @@ fn looks_like_pickle(bytes: &[u8]) -> bool {
 
 /// Best-effort format detection using the file prefix and extension.
 pub fn detect(path: &std::path::Path, prefix: &[u8]) -> ModelFormat {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let file_name = path
+        .file_name()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
     if prefix.len() >= 4 && &prefix[0..4] == b"GGUF" {
         return ModelFormat::Gguf;
     }
     if prefix.len() >= 4 && &prefix[0..4] == b"GGML" {
         return ModelFormat::Ggml;
     }
-    // ZIP local file header -> almost always a PyTorch archive for our inputs.
+    // ZIP local file header. NumPy/MLX `.npz` archives are also ZIPs, so
+    // disambiguate on extension; otherwise it is almost always a PyTorch archive.
     if prefix.len() >= 4 && &prefix[0..4] == b"PK\x03\x04" {
+        if ext == "npz" {
+            return ModelFormat::Npz;
+        }
         return ModelFormat::PyTorchZip;
     }
-    // ONNX protobuf files usually start with field 1 (ir_version) tag 0x08.
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
+    // ONNX and TensorFlow are both bare protobuf with no reliable magic, so we
+    // key off the extension / conventional filename.
     if ext == "onnx" {
         return ModelFormat::Onnx;
+    }
+    if ext == "pb" || file_name == "saved_model.pb" || file_name == "saved_model.pbtxt" {
+        return ModelFormat::TensorFlow;
+    }
+    if ext == "npz" {
+        return ModelFormat::Npz;
     }
 
     // Safetensors: first 8 bytes are a little-endian u64 header length, and
