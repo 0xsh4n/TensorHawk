@@ -45,6 +45,30 @@ impl ModelFormat {
     }
 }
 
+/// True if `prefix` begins with a strong, unambiguous model-container magic:
+/// GGUF, GGML, a ZIP local-file header (PyTorch/npz), or a safetensors header
+/// (u64 length followed by `{`).
+///
+/// Used to pick up extensionless model files during directory discovery — most
+/// importantly Ollama's `sha256-<hash>` blobs, which carry no extension. It
+/// deliberately excludes the weaker pickle/JSON heuristics, which would
+/// over-match arbitrary text files when sweeping a directory.
+pub fn has_model_magic(prefix: &[u8]) -> bool {
+    if prefix.len() >= 4 && (&prefix[0..4] == b"GGUF" || &prefix[0..4] == b"GGML") {
+        return true;
+    }
+    if prefix.len() >= 4 && &prefix[0..4] == b"PK\x03\x04" {
+        return true;
+    }
+    if prefix.len() >= 9 {
+        let hdr_len = u64::from_le_bytes(prefix[0..8].try_into().unwrap());
+        if hdr_len > 0 && prefix[8] == b'{' {
+            return true;
+        }
+    }
+    false
+}
+
 /// A pickle stream begins with the PROTO opcode (0x80) or one of the
 /// classic protocol-0 opcodes.
 fn looks_like_pickle(bytes: &[u8]) -> bool {
@@ -124,4 +148,37 @@ pub fn detect(path: &std::path::Path, prefix: &[u8]) -> ModelFormat {
     }
 
     ModelFormat::Unknown
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn model_magic_matches_gguf_without_extension() {
+        // Ollama stores models as extensionless `sha256-...` blobs; the magic
+        // must still identify them.
+        assert!(has_model_magic(b"GGUF\x03\x00\x00\x00rest"));
+        assert!(has_model_magic(b"GGML....."));
+        assert!(has_model_magic(b"PK\x03\x04zip-local-header"));
+    }
+
+    #[test]
+    fn model_magic_matches_safetensors_header() {
+        // 8-byte LE header length (non-zero) followed by '{'.
+        let mut b = (2u64).to_le_bytes().to_vec();
+        b.push(b'{');
+        b.push(b'}');
+        assert!(has_model_magic(&b));
+    }
+
+    #[test]
+    fn model_magic_rejects_arbitrary_text() {
+        // The strong-magic check must not over-match random files during a
+        // directory sweep (unlike the weaker pickle/JSON heuristics).
+        assert!(!has_model_magic(b"#!/usr/bin/env python\n"));
+        assert!(!has_model_magic(b"{ \"just\": \"json\" }"));
+        assert!(!has_model_magic(b"\x80\x04 pickle-ish"));
+        assert!(!has_model_magic(b"short"));
+    }
 }
