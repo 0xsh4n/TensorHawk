@@ -30,6 +30,33 @@ pub struct TensorDesc {
     pub data: Option<(u64, u64)>,
 }
 
+/// A column (CSV/TSV) or field (JSONL) discovered in a dataset, with a coarse
+/// inferred type over the sampled rows.
+#[derive(Debug, Clone)]
+pub struct DatasetColumn {
+    pub name: String,
+    /// One of `int`, `float`, `bool`, `string`, `empty` (best-effort).
+    pub inferred_type: String,
+}
+
+/// Lightweight structural view of a tabular / line-delimited dataset, built from
+/// a bounded sample of the file. This is what lets the `dataset` scanner report
+/// schema and scan content for PII / poisoning indicators without loading the
+/// whole (possibly multi-GB) file.
+#[derive(Debug, Clone)]
+pub struct DatasetInfo {
+    /// `csv`, `tsv`, or `jsonl`.
+    pub kind: &'static str,
+    pub columns: Vec<DatasetColumn>,
+    /// Sampled rows as `(column, value)` pairs; values are length-capped.
+    pub rows: Vec<Vec<(String, String)>>,
+    /// Number of rows parsed in the sample (excludes the CSV/TSV header).
+    pub rows_scanned: usize,
+    /// True if the file was larger than the sample window (so counts are a
+    /// lower bound and the readout is of a prefix, not the whole file).
+    pub truncated: bool,
+}
+
 pub struct Artifact {
     pub path: PathBuf,
     pub format: ModelFormat,
@@ -47,6 +74,8 @@ pub struct Artifact {
     /// the format is [`ModelFormat::HfConfig`]. Lets the `config` scanner inspect
     /// structure (e.g. `auto_map`) without re-parsing.
     pub config: Option<serde_json::Value>,
+    /// Structural view of a dataset artifact (CSV/TSV/JSONL), when applicable.
+    pub dataset: Option<DatasetInfo>,
 }
 
 impl Artifact {
@@ -89,6 +118,7 @@ impl Artifact {
             tensors: Vec::new(),
             graph_ops: Vec::new(),
             config: None,
+            dataset: None,
         };
 
         match format {
@@ -99,6 +129,9 @@ impl Artifact {
             ModelFormat::TensorFlow => artifact.parse_tensorflow(),
             ModelFormat::Npz => artifact.parse_npz(),
             ModelFormat::HfConfig => artifact.parse_hf_config(),
+            ModelFormat::Csv => artifact.parse_delimited(b','),
+            ModelFormat::Tsv => artifact.parse_delimited(b'\t'),
+            ModelFormat::Jsonl => artifact.parse_jsonl(),
             ModelFormat::PyTorchLegacyPickle => {
                 artifact.pickles.push(PickleStream {
                     name: "archive:legacy.pkl".to_string(),
@@ -442,6 +475,224 @@ impl Artifact {
         flatten_json_strings(&value, String::new(), &mut self.metadata, &mut budget);
         self.config = Some(value);
     }
+
+    // ---- Datasets (CSV / TSV / JSONL) -----------------------------------
+
+    /// Parse a delimited (CSV/TSV) dataset from a bounded prefix of the file:
+    /// the first line is the header, subsequent lines are sampled into rows.
+    fn parse_delimited(&mut self, delim: u8) {
+        let kind = if delim == b'\t' { "tsv" } else { "csv" };
+        let (text, truncated) = self.sample_text();
+        let mut lines = text.lines().filter(|l| !l.trim().is_empty());
+
+        let header = match lines.next() {
+            Some(h) => h,
+            None => return,
+        };
+        let col_names: Vec<String> = split_delimited(header, delim)
+            .into_iter()
+            .take(MAX_DATASET_COLS)
+            .collect();
+        if col_names.is_empty() {
+            return;
+        }
+
+        let mut rows: Vec<Vec<(String, String)>> = Vec::new();
+        for line in lines.take(MAX_DATASET_ROWS) {
+            let fields = split_delimited(line, delim);
+            let mut row = Vec::with_capacity(fields.len().min(MAX_DATASET_COLS));
+            for (i, mut v) in fields.into_iter().take(MAX_DATASET_COLS).enumerate() {
+                truncate_in_place(&mut v, MAX_FIELD_LEN);
+                let name = col_names
+                    .get(i)
+                    .cloned()
+                    .unwrap_or_else(|| format!("col{i}"));
+                row.push((name, v));
+            }
+            rows.push(row);
+        }
+
+        let columns = infer_columns(&col_names, &rows);
+        let rows_scanned = rows.len();
+        self.dataset = Some(DatasetInfo {
+            kind,
+            columns,
+            rows,
+            rows_scanned,
+            truncated,
+        });
+    }
+
+    /// Parse a JSON Lines dataset: each non-empty line is one JSON value. Object
+    /// lines contribute their keys as columns; other values fold into a single
+    /// `value` column.
+    fn parse_jsonl(&mut self) {
+        let (text, truncated) = self.sample_text();
+        let mut rows: Vec<Vec<(String, String)>> = Vec::new();
+        let mut col_order: Vec<String> = Vec::new();
+
+        for line in text
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .take(MAX_DATASET_ROWS)
+        {
+            let value: serde_json::Value = match serde_json::from_str(line) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            let mut row = Vec::new();
+            match value {
+                serde_json::Value::Object(map) => {
+                    for (k, v) in map.into_iter().take(MAX_DATASET_COLS) {
+                        if !col_order.iter().any(|c| c == &k) && col_order.len() < MAX_DATASET_COLS
+                        {
+                            col_order.push(k.clone());
+                        }
+                        let mut s = json_scalar_to_string(&v);
+                        truncate_in_place(&mut s, MAX_FIELD_LEN);
+                        row.push((k, s));
+                    }
+                }
+                other => {
+                    if !col_order.iter().any(|c| c == "value") {
+                        col_order.push("value".to_string());
+                    }
+                    let mut s = json_scalar_to_string(&other);
+                    truncate_in_place(&mut s, MAX_FIELD_LEN);
+                    row.push(("value".to_string(), s));
+                }
+            }
+            rows.push(row);
+        }
+
+        if col_order.is_empty() {
+            return;
+        }
+        let columns = infer_columns(&col_order, &rows);
+        let rows_scanned = rows.len();
+        self.dataset = Some(DatasetInfo {
+            kind: "jsonl",
+            columns,
+            rows,
+            rows_scanned,
+            truncated,
+        });
+    }
+
+    /// A UTF-8 (lossy) copy of the leading sample window, plus whether the file
+    /// extends beyond it.
+    fn sample_text(&self) -> (String, bool) {
+        let n = self.map.len().min(DATASET_SAMPLE_BYTES);
+        let truncated = self.map.len() > DATASET_SAMPLE_BYTES;
+        (
+            String::from_utf8_lossy(&self.map[..n]).into_owned(),
+            truncated,
+        )
+    }
+}
+
+/// Bytes of a dataset file to sample from the start (4 MiB).
+const DATASET_SAMPLE_BYTES: usize = 4 * 1024 * 1024;
+/// Max rows retained from the sample window.
+const MAX_DATASET_ROWS: usize = 2000;
+/// Max columns tracked.
+const MAX_DATASET_COLS: usize = 512;
+/// Max retained length of a single field value.
+const MAX_FIELD_LEN: usize = 2048;
+
+/// Split one delimited line into fields, honoring double-quoted fields that may
+/// contain the delimiter (`""` is an escaped quote). Not full RFC-4180 (no
+/// embedded newlines), which is deliberate — we parse a bounded line-oriented
+/// sample, not the entire file.
+fn split_delimited(line: &str, delim: u8) -> Vec<String> {
+    let delim = delim as char;
+    let mut out = Vec::new();
+    let mut field = String::new();
+    let mut in_quotes = false;
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        if in_quotes {
+            if c == '"' {
+                if chars.peek() == Some(&'"') {
+                    field.push('"');
+                    chars.next();
+                } else {
+                    in_quotes = false;
+                }
+            } else {
+                field.push(c);
+            }
+        } else if c == '"' {
+            in_quotes = true;
+        } else if c == delim {
+            out.push(std::mem::take(&mut field));
+        } else {
+            field.push(c);
+        }
+    }
+    out.push(field);
+    out.into_iter().map(|f| f.trim().to_string()).collect()
+}
+
+/// Render a JSON value as a compact string for field-level scanning.
+fn json_scalar_to_string(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Null => String::new(),
+        other => other.to_string(),
+    }
+}
+
+/// Truncate a string in place to at most `max` chars (char-boundary safe).
+fn truncate_in_place(s: &mut String, max: usize) {
+    if s.chars().count() > max {
+        *s = s.chars().take(max).collect();
+    }
+}
+
+/// Infer a coarse type per column from the sampled values.
+fn infer_columns(names: &[String], rows: &[Vec<(String, String)>]) -> Vec<DatasetColumn> {
+    names
+        .iter()
+        .map(|name| {
+            let mut all_int = true;
+            let mut all_float = true;
+            let mut all_bool = true;
+            let mut seen = 0usize;
+            for row in rows {
+                if let Some((_, v)) = row.iter().find(|(c, _)| c == name) {
+                    if v.is_empty() {
+                        continue;
+                    }
+                    seen += 1;
+                    if v.parse::<i64>().is_err() {
+                        all_int = false;
+                    }
+                    if v.parse::<f64>().is_err() {
+                        all_float = false;
+                    }
+                    if !matches!(v.to_ascii_lowercase().as_str(), "true" | "false") {
+                        all_bool = false;
+                    }
+                }
+            }
+            let inferred_type = if seen == 0 {
+                "empty"
+            } else if all_int {
+                "int"
+            } else if all_bool {
+                "bool"
+            } else if all_float {
+                "float"
+            } else {
+                "string"
+            };
+            DatasetColumn {
+                name: name.clone(),
+                inferred_type: inferred_type.to_string(),
+            }
+        })
+        .collect()
 }
 
 /// Collect string leaves of a JSON value into `out` as `(dotted.path, value)`

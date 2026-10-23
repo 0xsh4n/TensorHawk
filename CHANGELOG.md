@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [0.3.0] - 2026-10-23
 ### Added
+- **Dataset analysis (`dataset` scanner):** CSV / TSV / JSONL are now recognized
+  artifact formats. From a bounded sample the scanner reconstructs the dataset's
+  **structure** (columns + inferred types, row count), and statically flags
+  **PII** in content attributed to the column (email / SSN / Luhn-valid card /
+  IP), **prompt-injection & data-poisoning indicators** (instruction-override
+  phrasing; mapped to OWASP-LLM01 and MITRE ATLAS AML.T0020), **hidden/obfuscated
+  Unicode** (zero-width and bidirectional "Trojan Source" characters), and
+  **embedded active-content markup**. Indicators are labelled probabilistic; PII
+  evidence is redacted.
 - **Extensionless model discovery:** directory scans now identify model files by
   container magic (GGUF/GGML/ZIP/safetensors) in addition to file extension, so
   **Ollama's `sha256-<hash>` blobs** (and other extensionless artifacts) are

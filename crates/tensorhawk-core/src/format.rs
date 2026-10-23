@@ -25,6 +25,12 @@ pub enum ModelFormat {
     /// `adapter_config.json`, `model_index.json`, …). Not weights, but the surface
     /// where custom-code execution (`auto_map` / `trust_remote_code`) is declared.
     HfConfig,
+    /// Comma-separated-values dataset (`.csv`).
+    Csv,
+    /// Tab-separated-values dataset (`.tsv`).
+    Tsv,
+    /// JSON Lines dataset (`.jsonl` / `.ndjson`) — one JSON value per line.
+    Jsonl,
     Unknown,
 }
 
@@ -40,6 +46,9 @@ impl ModelFormat {
             ModelFormat::TensorFlow => "tensorflow",
             ModelFormat::Npz => "npz",
             ModelFormat::HfConfig => "hf-config",
+            ModelFormat::Csv => "csv",
+            ModelFormat::Tsv => "tsv",
+            ModelFormat::Jsonl => "jsonl",
             ModelFormat::Unknown => "unknown",
         }
     }
@@ -126,6 +135,17 @@ pub fn detect(path: &std::path::Path, prefix: &[u8]) -> ModelFormat {
     }
     if ext == "npz" {
         return ModelFormat::Npz;
+    }
+    // Tabular / line-delimited datasets, keyed off extension (text formats have
+    // no reliable magic).
+    if ext == "csv" {
+        return ModelFormat::Csv;
+    }
+    if ext == "tsv" {
+        return ModelFormat::Tsv;
+    }
+    if ext == "jsonl" || ext == "ndjson" {
+        return ModelFormat::Jsonl;
     }
     // Hugging Face / diffusers JSON configs. We key off the `.json` extension and
     // confirm the payload begins (ignoring leading whitespace) with a JSON object,
