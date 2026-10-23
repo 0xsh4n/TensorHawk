@@ -29,7 +29,7 @@ privacy, and provenance risks before the model reaches a runtime.
 
 It does **not** execute the model, does **not** call the network, and does **not** need a GPU.
 
-## What it catches today (v2.0)
+## What it catches today (v2.1)
 
 | Scanner | Detects |
 | --- | --- |
@@ -117,7 +117,7 @@ tensorhawk model.safetensors --experimental
 Example run against a booby-trapped checkpoint:
 
 ```
-TensorHawk v2.0.0  —  malicious_model.bin
+TensorHawk v2.1.0  —  malicious_model.bin
   format: pytorch-zip   size: 178 B   risk score: 62/100
 
   CRITICAL  Dangerous pickle import: posix.system  (97% conf)

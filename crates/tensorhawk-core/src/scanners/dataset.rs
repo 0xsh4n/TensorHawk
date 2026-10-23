@@ -19,7 +19,7 @@
 //! model trained on this data is compromised.
 
 use crate::artifact::Artifact;
-use crate::finding::{redact, Finding, Location, Severity};
+use crate::finding::{luhn_ok, redact, truncate, Finding, Location, Severity};
 use crate::scanners::Scanner;
 use regex::Regex;
 use std::collections::HashMap;
@@ -315,37 +315,6 @@ fn is_hidden_unicode(c: char) -> bool {
         | '\u{202A}'..='\u{202E}'                          // bidi embeddings/overrides
         | '\u{2066}'..='\u{2069}'                          // bidi isolates
     )
-}
-
-/// Luhn checksum to suppress false positives on the credit-card pattern.
-fn luhn_ok(s: &str) -> bool {
-    let digits: Vec<u32> = s.chars().filter_map(|c| c.to_digit(10)).collect();
-    if digits.len() < 13 {
-        return false;
-    }
-    let mut sum = 0u32;
-    let mut alt = false;
-    for &d in digits.iter().rev() {
-        let mut d = d;
-        if alt {
-            d *= 2;
-            if d > 9 {
-                d -= 9;
-            }
-        }
-        sum += d;
-        alt = !alt;
-    }
-    sum % 10 == 0
-}
-
-fn truncate(s: &str, max: usize) -> String {
-    if s.chars().count() <= max {
-        s.to_string()
-    } else {
-        let head: String = s.chars().take(max).collect();
-        format!("{head}…")
-    }
 }
 
 #[cfg(test)]

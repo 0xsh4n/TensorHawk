@@ -181,3 +181,36 @@ pub fn redact(s: &str) -> String {
     let tail: String = s.chars().skip(n - 4).collect();
     format!("{head}…{tail} ({n} chars)")
 }
+
+/// Truncate a string to at most `max` characters (char-boundary safe), appending
+/// an ellipsis when it was shortened.
+pub fn truncate(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        let head: String = s.chars().take(max).collect();
+        format!("{head}…")
+    }
+}
+
+/// Luhn checksum, used to suppress false positives on credit-card patterns.
+pub fn luhn_ok(s: &str) -> bool {
+    let digits: Vec<u32> = s.chars().filter_map(|c| c.to_digit(10)).collect();
+    if digits.len() < 13 {
+        return false;
+    }
+    let mut sum = 0u32;
+    let mut alt = false;
+    for &d in digits.iter().rev() {
+        let mut d = d;
+        if alt {
+            d *= 2;
+            if d > 9 {
+                d -= 9;
+            }
+        }
+        sum += d;
+        alt = !alt;
+    }
+    sum % 10 == 0
+}

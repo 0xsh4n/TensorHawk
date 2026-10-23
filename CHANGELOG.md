@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-10-23
+### Fixed
+- **GGUF quantized tensors no longer flood the report.** Standard GGUF/GGML
+  block-quantized dtypes (`q4_0`, `q4_k`, `q5_k`, `q6_k`, `q8_0`, …) are now
+  recognized, so a normal quantized model (e.g. a `Q4_K_M` GGUF) is no longer
+  flagged with one "unrecognized tensor dtype" finding per tensor.
+
+### Changed
+- Faster raw secret scanning on large artifacts: a single `RegexSet` pass finds
+  which patterns are present, and only those are re-scanned — a clean multi-GB
+  model now costs one pass instead of one per pattern. No change to findings.
+- Internal cleanup: shared `truncate`/`luhn_ok` helpers consolidated into
+  `finding`; duplicated SARIF result construction and dead code removed.
+
 ## [2.0.0] - 2026-10-23
 ### Added
 - **Professional HTML/PDF assessment reports.** The report is a formal,
@@ -91,7 +105,8 @@ All notable changes to this project are documented here. The format follows
 - Cross-platform release automation (Linux gnu/musl, macOS x86_64/arm64, Windows)
   with SHA256 checksums.
 
-[Unreleased]: https://github.com/0xsh4n/TensorHawk/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/0xsh4n/TensorHawk/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/0xsh4n/TensorHawk/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/0xsh4n/TensorHawk/compare/v0.2.0...v2.0.0
 [0.2.0]: https://github.com/0xsh4n/TensorHawk/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/0xsh4n/TensorHawk/releases/tag/v0.1.0

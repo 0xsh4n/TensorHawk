@@ -74,48 +74,6 @@ impl Report {
         serde_json::to_string_pretty(self).unwrap_or_default()
     }
 
-    /// Minimal but valid SARIF 2.1.0, suitable for GitHub code scanning.
-    pub fn to_sarif(&self) -> String {
-        let results: Vec<serde_json::Value> = self
-            .findings
-            .iter()
-            .map(|f| {
-                serde_json::json!({
-                    "ruleId": f.rule_id,
-                    "level": f.severity.sarif_level(),
-                    "message": { "text": format!("{}: {}", f.title, f.detail) },
-                    "properties": {
-                        "scanner": f.scanner,
-                        "confidence": f.confidence,
-                        "severity": f.severity.as_str(),
-                        "references": f.references,
-                    },
-                    "locations": [{
-                        "physicalLocation": {
-                            "artifactLocation": { "uri": self.target },
-                            "logicalLocations": [{ "name": f.location.component }],
-                        }
-                    }],
-                })
-            })
-            .collect();
-
-        let doc = serde_json::json!({
-            "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
-            "version": "2.1.0",
-            "runs": [{
-                "tool": { "driver": {
-                    "name": "TensorHawk",
-                    "informationUri": "https://github.com/0xsh4n/TensorHawk",
-                    "version": VERSION,
-                    "rules": [],
-                }},
-                "results": results,
-            }],
-        });
-        serde_json::to_string_pretty(&doc).unwrap_or_default()
-    }
-
     /// A detailed, self-contained HTML fragment (the `<section>` for this
     /// artifact): an artifact header with risk/format/size, a severity summary,
     /// then one card per finding. Each finding leads with its public framework
@@ -281,23 +239,7 @@ pub fn merged_sarif(reports: &[Report]) -> String {
     let mut results = Vec::new();
     for r in reports {
         for f in &r.findings {
-            results.push(serde_json::json!({
-                "ruleId": f.rule_id,
-                "level": f.severity.sarif_level(),
-                "message": { "text": format!("{}: {}", f.title, f.detail) },
-                "properties": {
-                    "scanner": f.scanner,
-                    "confidence": f.confidence,
-                    "severity": f.severity.as_str(),
-                    "references": f.references,
-                },
-                "locations": [{
-                    "physicalLocation": {
-                        "artifactLocation": { "uri": r.target },
-                        "logicalLocations": [{ "name": f.location.component }],
-                    }
-                }],
-            }));
+            results.push(sarif_result(f, &r.target));
         }
     }
     let doc = serde_json::json!({
@@ -314,6 +256,27 @@ pub fn merged_sarif(reports: &[Report]) -> String {
         }],
     });
     serde_json::to_string_pretty(&doc).unwrap_or_default()
+}
+
+/// Build the SARIF `result` object for a single finding at `uri`.
+fn sarif_result(f: &Finding, uri: &str) -> serde_json::Value {
+    serde_json::json!({
+        "ruleId": f.rule_id,
+        "level": f.severity.sarif_level(),
+        "message": { "text": format!("{}: {}", f.title, f.detail) },
+        "properties": {
+            "scanner": f.scanner,
+            "confidence": f.confidence,
+            "severity": f.severity.as_str(),
+            "references": f.references,
+        },
+        "locations": [{
+            "physicalLocation": {
+                "artifactLocation": { "uri": uri },
+                "logicalLocations": [{ "name": f.location.component }],
+            }
+        }],
+    })
 }
 
 /// Options controlling the branded HTML/PDF report document.

@@ -9,7 +9,7 @@
 use crate::artifact::Artifact;
 use crate::finding::{redact, Finding, Location, Severity};
 use crate::scanners::Scanner;
-use regex::bytes::Regex;
+use regex::bytes::{Regex, RegexSet};
 
 struct Pattern {
     rule_id: &'static str,
@@ -21,6 +21,9 @@ struct Pattern {
 
 pub struct SecretScanner {
     patterns: Vec<Pattern>,
+    /// All patterns compiled as one set, so the expensive raw-bytes pass can
+    /// find which patterns match in a single scan instead of one pass each.
+    set: RegexSet,
 }
 
 impl SecretScanner {
@@ -128,7 +131,8 @@ impl SecretScanner {
                 confidence: *conf,
             })
             .collect();
-        SecretScanner { patterns }
+        let set = RegexSet::new(defs.iter().map(|d| d.3)).expect("valid built-in secret patterns");
+        SecretScanner { patterns, set }
     }
 }
 
@@ -159,11 +163,14 @@ impl Scanner for SecretScanner {
         }
 
         // 2) Raw bytes — catches secrets in tokenizer blobs, pickles, headers.
-        //    Bounded so we never build huge intermediate buffers.
+        //    Bounded so we never build huge intermediate buffers. One RegexSet
+        //    pass finds which patterns are present; only those are re-scanned for
+        //    exact matches, so a clean multi-GB artifact costs a single pass.
         let data = artifact.data();
         let scan_len = data.len().min(256 * 1024 * 1024); // cap at 256 MiB for MVP
         let hay = &data[..scan_len];
-        for p in &self.patterns {
+        for i in self.set.matches(hay).iter() {
+            let p = &self.patterns[i];
             for m in p.re.find_iter(hay).take(50) {
                 let hit = String::from_utf8_lossy(m.as_bytes());
                 findings.push(secret_finding(p, "raw", Some(m.start() as u64), &hit));

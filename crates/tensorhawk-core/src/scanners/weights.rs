@@ -28,6 +28,28 @@ fn dtype_size(dt: &str) -> Option<u64> {
     })
 }
 
+/// True for standard GGUF/GGML block-quantized tensor dtypes. These are the
+/// normal storage types of a quantized model (a `Q4_K_M` GGUF is almost entirely
+/// `q4_k`/`q6_k`), so they are *recognized* — they simply have no fixed
+/// per-element byte width, which is why [`dtype_size`] returns `None` for them.
+fn is_quant_dtype(dt: &str) -> bool {
+    matches!(
+        dt,
+        "q4_0"
+            | "q4_1"
+            | "q5_0"
+            | "q5_1"
+            | "q8_0"
+            | "q8_1"
+            | "q2_k"
+            | "q3_k"
+            | "q4_k"
+            | "q5_k"
+            | "q6_k"
+            | "q8_k"
+    )
+}
+
 fn shape_numel(shape: &[u64]) -> Option<u64> {
     shape.iter().try_fold(1u64, |acc, &d| acc.checked_mul(d))
 }
@@ -48,7 +70,14 @@ impl Scanner for WeightScanner {
             let comp = format!("tensor:{}", t.name);
 
             // 1) Descriptor sanity: known dtype, non-overflowing shape.
-            if dtype_size(&t.dtype).is_none() && t.dtype != "string" && t.dtype != "?" {
+            //    GGUF/GGML quantized dtypes are known (just not fixed-width), so
+            //    they are not flagged — otherwise every quantized tensor in a
+            //    normal GGUF would produce a finding.
+            if dtype_size(&t.dtype).is_none()
+                && !is_quant_dtype(&t.dtype)
+                && t.dtype != "string"
+                && t.dtype != "?"
+            {
                 findings.push(
                     Finding::builder("THK-WGT-004", "weights", Severity::Info)
                         .title(format!("Unrecognized tensor dtype `{}`", t.dtype))
@@ -232,6 +261,18 @@ mod tests {
         assert_eq!(dtype_size("F32"), Some(4));
         assert_eq!(shape_numel(&[2, 3, 4]), Some(24));
         assert_eq!(shape_numel(&[u64::MAX, 2]), None);
+    }
+
+    #[test]
+    fn gguf_quant_dtypes_are_recognized() {
+        // The storage types of a normal quantized GGUF — must not be flagged as
+        // "unrecognized" (they just lack a fixed per-element width).
+        for dt in ["q4_0", "q4_k", "q5_k", "q6_k", "q8_0"] {
+            assert!(is_quant_dtype(dt), "{dt} should be a known quant dtype");
+            assert_eq!(dtype_size(dt), None);
+        }
+        assert!(!is_quant_dtype("f32"));
+        assert!(!is_quant_dtype("ggml_unknown"));
     }
 
     #[test]

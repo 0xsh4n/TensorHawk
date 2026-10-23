@@ -8,7 +8,7 @@
 //! chain of custody.
 
 use crate::artifact::Artifact;
-use crate::finding::{Finding, Location, Severity};
+use crate::finding::{truncate, Finding, Location, Severity};
 use crate::scanners::Scanner;
 
 pub struct LineageScanner;
@@ -137,13 +137,4 @@ fn detect_conversion(artifact: &Artifact) -> Option<(String, String)> {
         }
     }
     None
-}
-
-fn truncate(s: &str, max: usize) -> String {
-    if s.chars().count() <= max {
-        s.to_string()
-    } else {
-        let head: String = s.chars().take(max).collect();
-        format!("{head}…")
-    }
 }

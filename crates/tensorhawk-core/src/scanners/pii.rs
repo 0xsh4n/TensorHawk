@@ -6,7 +6,7 @@
 //! compliance concern (GDPR/DPDP), not an accusation about model behavior.
 
 use crate::artifact::Artifact;
-use crate::finding::{redact, Finding, Location, Severity};
+use crate::finding::{luhn_ok, redact, Finding, Location, Severity};
 use crate::scanners::Scanner;
 use regex::Regex;
 
@@ -93,28 +93,6 @@ impl Default for PiiScanner {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// Luhn checksum, used to suppress false positives on the credit-card pattern.
-fn luhn_ok(s: &str) -> bool {
-    let digits: Vec<u32> = s.chars().filter_map(|c| c.to_digit(10)).collect();
-    if digits.len() < 13 {
-        return false;
-    }
-    let mut sum = 0u32;
-    let mut alt = false;
-    for &d in digits.iter().rev() {
-        let mut d = d;
-        if alt {
-            d *= 2;
-            if d > 9 {
-                d -= 9;
-            }
-        }
-        sum += d;
-        alt = !alt;
-    }
-    sum % 10 == 0
 }
 
 impl Scanner for PiiScanner {
