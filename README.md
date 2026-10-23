@@ -48,7 +48,7 @@ It does **not** execute the model, does **not** call the network, and does **not
 
 Extensionless files (e.g. **Ollama's `sha256-…` blobs**) are identified by container magic, so `tensorhawk ~/.ollama/models/blobs/ -r` works.
 
-Detections ship as **data**: the `MODEL_RULE` engine loads a bundled rule pack and any packs you pass with `--rules <dir>` — see [`docs/RULES.md`](docs/RULES.md) to write your own. Findings are scored by severity × confidence, mapped to **OWASP LLM Top 10**, **MITRE ATLAS**, and **CWE**, and can be emitted as **SARIF** for GitHub code scanning or a self-contained **HTML** report.
+Detections ship as **data**: the `MODEL_RULE` engine loads a bundled rule pack and any packs you pass with `--rules <dir>` — see [`docs/RULES.md`](docs/RULES.md) to write your own. Findings are scored by severity × confidence, mapped to **OWASP LLM Top 10**, **MITRE ATLAS**, and **CWE**, and can be emitted as **SARIF** for GitHub code scanning, a self-contained **HTML** report, or a branded, paginated **PDF** report (`--format pdf --output report.pdf`, with an `--author` byline; needs a local HTML→PDF converter such as WeasyPrint).
 
 ## Install
 

@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [0.3.0] - 2026-10-23
 ### Added
+- **Branded, detailed HTML/PDF reports:** the HTML report now renders a
+  TensorHawk document header (with an `--author` byline, default `0xsh4n`),
+  a generation timestamp, an overview summary, and one rich card per finding
+  carrying full detail, evidence, **remediation**, and framework **references**
+  (previously dropped from HTML). A new `--format pdf` converts the same
+  print-ready document to a paginated PDF via a local converter (WeasyPrint
+  preferred, then wkhtmltopdf or headless Chromium/Chrome) — running header,
+  per-page footer with author and `Page N of M`. `pdf` requires `--output`;
+  if no converter is installed it fails with guidance (optional integration,
+  no new Rust dependency). `--author ""` omits the byline.
 - **Dataset analysis (`dataset` scanner):** CSV / TSV / JSONL are now recognized
   artifact formats. From a bounded sample the scanner reconstructs the dataset's
   **structure** (columns + inferred types, row count), and statically flags
