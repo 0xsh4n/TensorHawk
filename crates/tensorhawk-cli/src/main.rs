@@ -88,7 +88,7 @@ struct Cli {
 fn is_candidate(p: &std::path::Path) -> bool {
     let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
     let name = p.file_name().and_then(|e| e.to_str()).unwrap_or("");
-    matches!(
+    let ext_match = matches!(
         ext,
         "gguf"
             | "ggml"
@@ -102,7 +102,23 @@ fn is_candidate(p: &std::path::Path) -> bool {
             | "pb"
             | "npz"
             | "json"
-    ) || name == "saved_model.pb"
+    ) || name == "saved_model.pb";
+    // Fast path: a recognized extension. Otherwise sniff the leading bytes for a
+    // strong container magic, so extensionless model files are still discovered
+    // during a directory scan — notably Ollama's `sha256-<hash>` blobs.
+    ext_match || has_model_magic_at(p)
+}
+
+/// Peek at a file's first bytes and report whether they carry a strong model
+/// container magic (GGUF/GGML/ZIP/safetensors). Any I/O error means "not a
+/// candidate" — discovery must never fail the run on an unreadable entry.
+fn has_model_magic_at(p: &std::path::Path) -> bool {
+    use std::io::Read;
+    let mut buf = [0u8; 16];
+    match std::fs::File::open(p).and_then(|mut f| f.read(&mut buf)) {
+        Ok(n) => tensorhawk_core::format::has_model_magic(&buf[..n]),
+        Err(_) => false,
+    }
 }
 
 fn collect_targets(cli: &Cli) -> Vec<PathBuf> {

@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [0.3.0] - 2026-10-23
 ### Added
+- **Extensionless model discovery:** directory scans now identify model files by
+  container magic (GGUF/GGML/ZIP/safetensors) in addition to file extension, so
+  **Ollama's `sha256-<hash>` blobs** (and other extensionless artifacts) are
+  picked up instead of being silently skipped. The sniff uses only strong,
+  unambiguous magics to avoid over-matching arbitrary files.
 - **Hugging Face JSON config parsing:** `config.json`, `tokenizer_config.json`,
   `adapter_config.json`, `model_index.json` and other `.json` config documents
   are now a recognized artifact format (`hf-config`). Config string values are
