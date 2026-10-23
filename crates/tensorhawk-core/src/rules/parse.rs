@@ -40,7 +40,10 @@ struct Lexer<'a> {
 
 impl<'a> Lexer<'a> {
     fn new(s: &'a str) -> Self {
-        Lexer { s: s.as_bytes(), i: 0 }
+        Lexer {
+            s: s.as_bytes(),
+            i: 0,
+        }
     }
 
     fn tokenize(mut self) -> Result<Vec<Tok>, String> {
@@ -314,8 +317,7 @@ impl Parser {
                 Some(Tok::Str(s)) => regex::escape(&s),
                 other => return Err(format!("expected regex or string, found {other:?}")),
             };
-            let re =
-                Regex::new(&pattern).map_err(|e| format!("invalid regex for ${name}: {e}"))?;
+            let re = Regex::new(&pattern).map_err(|e| format!("invalid regex for ${name}: {e}"))?;
             defs.push(StringDef { name, re });
         }
         Ok(defs)
@@ -458,7 +460,8 @@ mod tests {
             state ^= state << 17;
             state
         };
-        let alphabet = b"MODEL_RULE {}()=/:,$\"abc123 \nand or not import op opcode metadata raw pickle";
+        let alphabet =
+            b"MODEL_RULE {}()=/:,$\"abc123 \nand or not import op opcode metadata raw pickle";
         for _ in 0..2000 {
             let len = (next() % 200) as usize;
             let s: String = (0..len)

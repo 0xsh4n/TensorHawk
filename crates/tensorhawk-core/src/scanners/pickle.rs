@@ -181,11 +181,7 @@ pub struct PickleImports {
 pub fn imported_globals(bytes: &[u8]) -> PickleImports {
     let d = disassemble(bytes);
     PickleImports {
-        imports: d
-            .imports
-            .into_iter()
-            .map(|i| (i.module, i.name))
-            .collect(),
+        imports: d.imports.into_iter().map(|i| (i.module, i.name)).collect(),
         has_reduce: d.has_reduce,
     }
 }
