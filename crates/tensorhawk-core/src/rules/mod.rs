@@ -193,10 +193,7 @@ impl<'a> EvalContext<'a> {
                 }
             }
         };
-        matches
-            .into_iter()
-            .map(|m| self.finding(rule, m))
-            .collect()
+        matches.into_iter().map(|m| self.finding(rule, m)).collect()
     }
 
     fn eval_bool(&self, rule: &Rule, e: &Expr) -> bool {

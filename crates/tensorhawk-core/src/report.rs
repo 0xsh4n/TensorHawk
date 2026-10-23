@@ -140,8 +140,10 @@ impl Report {
             out.push_str("<p class=\"clean\">✓ no findings</p>\n</section>\n");
             return out;
         }
-        out.push_str("<table>\n<thead><tr><th>Severity</th><th>Finding</th><th>Rule</th>\
-                      <th>Location</th><th>Conf.</th><th>Evidence</th></tr></thead>\n<tbody>\n");
+        out.push_str(
+            "<table>\n<thead><tr><th>Severity</th><th>Finding</th><th>Rule</th>\
+                      <th>Location</th><th>Conf.</th><th>Evidence</th></tr></thead>\n<tbody>\n",
+        );
         for f in &self.findings {
             out.push_str(&format!(
                 "<tr class=\"sev-{sev}\"><td><span class=\"pill pill-{sev}\">{sevu}</span></td>\

@@ -337,7 +337,11 @@ impl Artifact {
                             _ => {}
                         }
                     }
-                    let dom = if domain.is_empty() { "ai.onnx" } else { &domain };
+                    let dom = if domain.is_empty() {
+                        "ai.onnx"
+                    } else {
+                        &domain
+                    };
                     self.metadata
                         .push(("onnx.opset".into(), format!("{dom} v{version}")));
                 }
@@ -454,7 +458,11 @@ fn flatten_json_strings(
     }
     match value {
         serde_json::Value::String(s) => {
-            let key = if path.is_empty() { "config".into() } else { path };
+            let key = if path.is_empty() {
+                "config".into()
+            } else {
+                path
+            };
             let v: String = s.chars().take(4096).collect();
             out.push((key, v));
             *budget -= 1;
@@ -594,9 +602,15 @@ fn parse_npy_header(b: &[u8]) -> Option<(String, Vec<u64>)> {
     }
     let major = b[6];
     let (hdr_len, hdr_start) = if major >= 2 {
-        (u32::from_le_bytes(b.get(8..12)?.try_into().ok()?) as usize, 12)
+        (
+            u32::from_le_bytes(b.get(8..12)?.try_into().ok()?) as usize,
+            12,
+        )
     } else {
-        (u16::from_le_bytes(b.get(8..10)?.try_into().ok()?) as usize, 10)
+        (
+            u16::from_le_bytes(b.get(8..10)?.try_into().ok()?) as usize,
+            10,
+        )
     };
     let header = std::str::from_utf8(b.get(hdr_start..hdr_start + hdr_len)?).ok()?;
     // header is a Python dict literal, e.g.
@@ -742,10 +756,10 @@ impl<'a> Cursor<'a> {
 
 fn scalar_size(t: u32) -> Option<usize> {
     Some(match t {
-        0 | 1 | 7 => 1,    // uint8 / int8 / bool
-        2 | 3 => 2,        // uint16 / int16
-        4 | 5 | 6 => 4,    // uint32 / int32 / float32
-        10 | 11 | 12 => 8, // uint64 / int64 / float64
+        0 | 1 | 7 => 1, // uint8 / int8 / bool
+        2 | 3 => 2,     // uint16 / int16
+        4..=6 => 4,     // uint32 / int32 / float32
+        10..=12 => 8,   // uint64 / int64 / float64
         _ => return None,
     })
 }
