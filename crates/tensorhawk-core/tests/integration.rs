@@ -140,6 +140,37 @@ fn hf_config_flags_remote_code_execution() {
 }
 
 #[test]
+fn csv_dataset_structure_pii_and_poisoning() {
+    let report = analyze(&fixture("dataset.csv")).expect("scan");
+    assert_eq!(report.format, "csv");
+    // Structure readout.
+    assert!(report.findings.iter().any(|f| f.rule_id == "THK-DS-000"));
+    // PII attributed to columns.
+    assert!(report
+        .findings
+        .iter()
+        .any(|f| f.rule_id == "THK-DS-010" && f.location.component.contains("email")));
+    assert!(report
+        .findings
+        .iter()
+        .any(|f| f.rule_id == "THK-DS-012" && f.location.component.contains("ssn")));
+    // Poisoning / prompt-injection indicator and hidden-Unicode indicator.
+    assert!(report.findings.iter().any(|f| f.rule_id == "THK-DS-001"));
+    assert!(report.findings.iter().any(|f| f.rule_id == "THK-DS-002"));
+    // PII evidence must be redacted, never the raw SSN.
+    let ssn = report
+        .findings
+        .iter()
+        .find(|f| f.rule_id == "THK-DS-012")
+        .unwrap();
+    assert!(!ssn
+        .evidence
+        .as_deref()
+        .unwrap_or("")
+        .contains("123-45-6789"));
+}
+
+#[test]
 fn html_report_is_self_contained() {
     let report = analyze(&fixture("malicious_model.bin")).expect("scan");
     let html = report.to_html();

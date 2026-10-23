@@ -102,6 +102,10 @@ fn is_candidate(p: &std::path::Path) -> bool {
             | "pb"
             | "npz"
             | "json"
+            | "csv"
+            | "tsv"
+            | "jsonl"
+            | "ndjson"
     ) || name == "saved_model.pb";
     // Fast path: a recognized extension. Otherwise sniff the leading bytes for a
     // strong container magic, so extensionless model files are still discovered
