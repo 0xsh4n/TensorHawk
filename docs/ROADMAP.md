@@ -27,6 +27,16 @@ the commitment.
 - *Still open:* content-hash validation against a manifest; a full ancestry
   graph across multiple artifacts.
 
+## v0.3.x — Config & custom-code surface (shipped)
+- Hugging Face JSON configs (`config.json`, `tokenizer_config.json`, …) are a
+  recognized `hf-config` format; string leaves are flattened into metadata so the
+  `secrets`/`pii`/`metadata` scanners inspect config values.
+- `config` scanner: `auto_map`, baked-in `trust_remote_code: true`, and
+  `custom_pipelines` — custom author Python executed on load under
+  `trust_remote_code=True`, the same code-execution class as a malicious pickle.
+- *Still open:* correlate `auto_map` module references with the actual `*.py`
+  files in a scanned model directory and flag/triage that custom code directly.
+
 ## v0.4 — Scale & SDKs (partial)
 - **Done:** parallel batch scanning; mmap keeps multi-GB files off the heap; the
   secrets/rule passes are byte-range capped so hostile sizes can't exhaust

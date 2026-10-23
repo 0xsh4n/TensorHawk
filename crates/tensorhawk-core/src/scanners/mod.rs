@@ -8,6 +8,7 @@
 use crate::artifact::Artifact;
 use crate::finding::Finding;
 
+pub mod config;
 pub mod entropy;
 pub mod experimental;
 pub mod lineage;
@@ -32,6 +33,7 @@ pub fn builtin_scanners() -> Vec<Box<dyn Scanner>> {
         Box::new(secrets::SecretScanner::new()),
         Box::new(pii::PiiScanner::new()),
         Box::new(metadata::MetadataScanner::new()),
+        Box::new(config::ConfigScanner),
         Box::new(entropy::EntropyScanner),
         Box::new(weights::WeightScanner),
         Box::new(lineage::LineageScanner::new()),

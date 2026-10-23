@@ -5,6 +5,20 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+### Added
+- **Hugging Face JSON config parsing:** `config.json`, `tokenizer_config.json`,
+  `adapter_config.json`, `model_index.json` and other `.json` config documents
+  are now a recognized artifact format (`hf-config`). Config string values are
+  flattened into artifact metadata, so the existing `secrets`/`pii`/`metadata`
+  scanners inspect them too (leaked keys and build paths in configs are common).
+  Parsing is bounded (16 MiB cap, capped key count and value length).
+- **`config` scanner:** flags custom-code execution declared in model configs —
+  Hugging Face `auto_map` (ships custom `*.py` modules run under
+  `trust_remote_code=True`), a baked-in `trust_remote_code: true`, and
+  `custom_pipelines`. These execute author-supplied Python on the loading host
+  before inference, the same code-execution risk class as a malicious pickle.
+  Mapped to MITRE ATLAS AML.T0010, CWE-494, and OWASP-LLM05. Still fully static:
+  nothing is fetched or executed.
 
 ## [0.2.0] - 2026-08-06
 ### Added

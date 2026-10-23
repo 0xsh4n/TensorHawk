@@ -101,6 +101,7 @@ fn is_candidate(p: &std::path::Path) -> bool {
             | "pkl"
             | "pb"
             | "npz"
+            | "json"
     ) || name == "saved_model.pb"
 }
 

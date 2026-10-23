@@ -21,6 +21,10 @@ pub enum ModelFormat {
     TensorFlow,
     /// MLX / NumPy `.npz` zip of `.npy` arrays.
     Npz,
+    /// A Hugging Face / diffusers JSON config (`config.json`, `tokenizer_config.json`,
+    /// `adapter_config.json`, `model_index.json`, …). Not weights, but the surface
+    /// where custom-code execution (`auto_map` / `trust_remote_code`) is declared.
+    HfConfig,
     Unknown,
 }
 
@@ -35,6 +39,7 @@ impl ModelFormat {
             ModelFormat::Onnx => "onnx",
             ModelFormat::TensorFlow => "tensorflow",
             ModelFormat::Npz => "npz",
+            ModelFormat::HfConfig => "hf-config",
             ModelFormat::Unknown => "unknown",
         }
     }
@@ -49,6 +54,15 @@ fn looks_like_pickle(bytes: &[u8]) -> bool {
         Some(b'(') | Some(b'c') | Some(b'}') | Some(b']') => bytes.len() > 2,
         _ => false,
     }
+}
+
+/// True if `prefix`, ignoring leading ASCII whitespace, begins with `{` — the
+/// start of a JSON object (used to confirm a `.json` file is a config document).
+fn starts_with_json_object(prefix: &[u8]) -> bool {
+    prefix
+        .iter()
+        .find(|b| !b.is_ascii_whitespace())
+        .is_some_and(|&b| b == b'{')
 }
 
 /// Best-effort format detection using the file prefix and extension.
@@ -88,6 +102,12 @@ pub fn detect(path: &std::path::Path, prefix: &[u8]) -> ModelFormat {
     }
     if ext == "npz" {
         return ModelFormat::Npz;
+    }
+    // Hugging Face / diffusers JSON configs. We key off the `.json` extension and
+    // confirm the payload begins (ignoring leading whitespace) with a JSON object,
+    // so a stray `.json` that is not an object falls through to Unknown.
+    if ext == "json" && starts_with_json_object(prefix) {
+        return ModelFormat::HfConfig;
     }
 
     // Safetensors: first 8 bytes are a little-endian u64 header length, and

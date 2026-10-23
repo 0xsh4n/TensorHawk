@@ -1,0 +1,11 @@
+{
+  "architectures": ["CustomForCausalLM"],
+  "model_type": "custom",
+  "hidden_size": 4096,
+  "trust_remote_code": true,
+  "auto_map": {
+    "AutoConfig": "configuration_custom.CustomConfig",
+    "AutoModelForCausalLM": "modeling_custom.CustomForCausalLM"
+  },
+  "_name_or_path": "/home/mlbuilder/models/custom-7b"
+}

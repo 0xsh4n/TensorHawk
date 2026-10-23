@@ -119,6 +119,27 @@ fn baseline_suppresses_known_findings() {
 }
 
 #[test]
+fn hf_config_flags_remote_code_execution() {
+    let report = analyze(&fixture("config.json")).expect("scan");
+    assert_eq!(report.format, "hf-config");
+    // auto_map custom-code declaration and the baked-in trust_remote_code flag.
+    let auto = report
+        .findings
+        .iter()
+        .find(|f| f.rule_id == "THK-CFG-001")
+        .expect("auto_map finding");
+    assert_eq!(auto.severity, Severity::High);
+    assert!(auto
+        .evidence
+        .as_deref()
+        .is_some_and(|e| e.contains("modeling_custom")));
+    assert!(report.findings.iter().any(|f| f.rule_id == "THK-CFG-002"));
+    // Flattening config strings into metadata lets the metadata scanner catch
+    // the absolute build path leaked in `_name_or_path`.
+    assert!(report.findings.iter().any(|f| f.rule_id == "THK-MET-001"));
+}
+
+#[test]
 fn html_report_is_self_contained() {
     let report = analyze(&fixture("malicious_model.bin")).expect("scan");
     let html = report.to_html();

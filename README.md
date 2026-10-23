@@ -37,12 +37,13 @@ It does **not** execute the model, does **not** call the network, and does **not
 | `secrets` | AWS / GitHub / Slack / Google / Stripe / OpenAI / Anthropic keys, private-key blocks, JWTs, DB connection strings |
 | `pii` | Emails, credit cards (Luhn-validated), SSN, Aadhaar, PAN, IBAN leaked into metadata |
 | `metadata` | Absolute build paths (username/host leaks), internal URLs, cloud/infra identifiers, provenance |
+| `config` | Custom-code execution declared in model configs: Hugging Face `auto_map`, baked-in `trust_remote_code: true`, and `custom_pipelines` — the code `from_pretrained(trust_remote_code=True)` runs on load |
 | `entropy` | High-entropy blobs hidden inside pickle object graphs (packed/encrypted second-stage payloads) |
 | `weights` | Tensor shape × dtype byte-size mismatches, non-finite (NaN/Inf) weights, fully-zeroed and duplicate tensors, dtype/shape-overflow anomalies |
 | `lineage` | LoRA / PEFT adapters, declared base model, quantization/conversion ancestry |
 | `rules` | Declarative **MODEL_RULE** detections — including dangerous graph operators (TensorFlow `PyFunc` → arbitrary Python, file-I/O ops, custom-domain ONNX ops) and extra credential patterns |
 
-**Formats:** GGUF · safetensors · PyTorch ZIP (`.bin`/`.pt`/`.pth`/`.ckpt`) · legacy pickle · **ONNX** · **TensorFlow** SavedModel/GraphDef · **MLX / NumPy `.npz`** (object arrays are routed to the pickle scanner).
+**Formats:** GGUF · safetensors · PyTorch ZIP (`.bin`/`.pt`/`.pth`/`.ckpt`) · legacy pickle · **ONNX** · **TensorFlow** SavedModel/GraphDef · **MLX / NumPy `.npz`** (object arrays are routed to the pickle scanner) · **Hugging Face JSON configs** (`config.json`, `tokenizer_config.json`, `adapter_config.json`, … — config strings are also fed to the `secrets`/`pii`/`metadata` scanners).
 
 Detections ship as **data**: the `MODEL_RULE` engine loads a bundled rule pack and any packs you pass with `--rules <dir>` — see [`docs/RULES.md`](docs/RULES.md) to write your own. Findings are scored by severity × confidence, mapped to **OWASP LLM Top 10**, **MITRE ATLAS**, and **CWE**, and can be emitted as **SARIF** for GitHub code scanning or a self-contained **HTML** report.
 

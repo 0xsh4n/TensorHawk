@@ -24,9 +24,10 @@ file ─▶ Artifact::load
                ONNX          → protobuf: producer, metadata, graph operators
                TensorFlow    → protobuf: harvested operators + strings
                npz (MLX)     → per-array dtype/shape; object arrays → pickle
+               hf-config     → JSON parse; string leaves → metadata; auto_map etc.
        ▼
    scanners run in parallel (rayon), each a read-only fn(&Artifact) -> Vec<Finding>
-     built-ins: pickle secrets pii metadata entropy weights lineage
+     built-ins: pickle secrets pii metadata config entropy weights lineage
      rules:     the MODEL_RULE engine (bundled pack + optional --rules dir)
      optional:  experimental detectors (behind --experimental)
        ▼
@@ -50,6 +51,7 @@ pub struct Artifact {
     pub tensor_count: Option<u64>,
     pub tensors: Vec<TensorDesc>,    // name, dtype, shape, exact byte range
     pub graph_ops: Vec<String>,      // ONNX / TF operator kinds
+    pub config: Option<Value>,       // parsed JSON for hf-config artifacts
 }
 ```
 
@@ -78,6 +80,7 @@ hub account, a malicious fine-tuner, an insider).
 | T7 | Code execution via graph op | TF `PyFunc` / custom operators | `rules` (`operators`) |
 | T8 | Tampered / poisoned weights | shape·dtype·size mismatch, NaN/Inf, zeroed | `weights` |
 | T9 | Unclear chain of custody | LoRA delta, quant/convert ancestry | `lineage` |
+| T10 | Code execution via config | `auto_map` / `trust_remote_code` custom Python run on load | `config` |
 
 **Explicit non-goals (v0.1):** behavioral/runtime analysis, proving a model is
 backdoor-free, or proving training-data provenance. Those are research problems and

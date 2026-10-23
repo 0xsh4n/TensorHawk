@@ -43,6 +43,10 @@ pub struct Artifact {
     pub tensors: Vec<TensorDesc>,
     /// Graph operator / node kinds harvested from ONNX / TensorFlow graphs.
     pub graph_ops: Vec<String>,
+    /// Parsed JSON for config artifacts (Hugging Face `config.json`, etc.), when
+    /// the format is [`ModelFormat::HfConfig`]. Lets the `config` scanner inspect
+    /// structure (e.g. `auto_map`) without re-parsing.
+    pub config: Option<serde_json::Value>,
 }
 
 impl Artifact {
@@ -84,6 +88,7 @@ impl Artifact {
             tensor_count: None,
             tensors: Vec::new(),
             graph_ops: Vec::new(),
+            config: None,
         };
 
         match format {
@@ -93,6 +98,7 @@ impl Artifact {
             ModelFormat::Onnx => artifact.parse_onnx(),
             ModelFormat::TensorFlow => artifact.parse_tensorflow(),
             ModelFormat::Npz => artifact.parse_npz(),
+            ModelFormat::HfConfig => artifact.parse_hf_config(),
             ModelFormat::PyTorchLegacyPickle => {
                 artifact.pickles.push(PickleStream {
                     name: "archive:legacy.pkl".to_string(),
@@ -409,6 +415,72 @@ impl Artifact {
             }
         }
         self.tensor_count = Some(self.tensors.len() as u64);
+    }
+
+    // ---- Hugging Face / diffusers JSON config ---------------------------
+
+    fn parse_hf_config(&mut self) {
+        // Reject absurdly large configs before handing bytes to serde_json; a
+        // genuine config is kilobytes, and we must not let a hostile multi-GB
+        // ".json" exhaust memory during parsing.
+        const MAX_CONFIG: usize = 16 * 1024 * 1024;
+        if self.map.len() > MAX_CONFIG {
+            return;
+        }
+        let value: serde_json::Value = match serde_json::from_slice(self.map.as_ref()) {
+            Ok(v) => v,
+            Err(_) => return,
+        };
+        // Flatten string leaves into metadata so the secrets/pii/metadata
+        // scanners inspect config values too (keys and paths leak here). Bounded
+        // in count and per-value length so a pathological config can't blow up.
+        let mut budget = 512usize;
+        flatten_json_strings(&value, String::new(), &mut self.metadata, &mut budget);
+        self.config = Some(value);
+    }
+}
+
+/// Collect string leaves of a JSON value into `out` as `(dotted.path, value)`
+/// pairs, bounded by `budget` entries and truncating each value. Array elements
+/// use their index as a path segment.
+fn flatten_json_strings(
+    value: &serde_json::Value,
+    path: String,
+    out: &mut Vec<(String, String)>,
+    budget: &mut usize,
+) {
+    if *budget == 0 {
+        return;
+    }
+    match value {
+        serde_json::Value::String(s) => {
+            let key = if path.is_empty() { "config".into() } else { path };
+            let v: String = s.chars().take(4096).collect();
+            out.push((key, v));
+            *budget -= 1;
+        }
+        serde_json::Value::Object(map) => {
+            for (k, v) in map {
+                if *budget == 0 {
+                    break;
+                }
+                let child = if path.is_empty() {
+                    k.clone()
+                } else {
+                    format!("{path}.{k}")
+                };
+                flatten_json_strings(v, child, out, budget);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for (i, v) in items.iter().enumerate() {
+                if *budget == 0 {
+                    break;
+                }
+                flatten_json_strings(v, format!("{path}.{i}"), out, budget);
+            }
+        }
+        _ => {}
     }
 }
 
