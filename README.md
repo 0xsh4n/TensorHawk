@@ -29,7 +29,7 @@ privacy, and provenance risks before the model reaches a runtime.
 
 It does **not** execute the model, does **not** call the network, and does **not** need a GPU.
 
-## What it catches today (v0.2)
+## What it catches today (v2.0)
 
 | Scanner | Detects |
 | --- | --- |
@@ -86,10 +86,19 @@ tensorhawk model.safetensors
 # scan a directory of models (recursively) and fail CI on high+ findings
 tensorhawk ./models --recursive --fail-on high
 
+# scan a directory of Ollama models (extensionless sha256 blobs are detected by magic)
+tensorhawk ~/.ollama/models/blobs/ --recursive
+
+# scan a dataset (CSV / TSV / JSONL): structure, PII, poisoning indicators
+tensorhawk training_data.csv
+
 # machine-readable output
 tensorhawk model.bin --format json  > report.json
 tensorhawk model.bin --format sarif > report.sarif
-tensorhawk model.bin --format html  --output report.html
+
+# professional security-assessment report (HTML, and PDF with a byline)
+tensorhawk ./models --recursive --format html --output report.html
+tensorhawk ./models --recursive --format pdf  --output report.pdf --author 0xsh4n
 
 # only show medium and above
 tensorhawk model.bin --min-severity medium
@@ -108,7 +117,7 @@ tensorhawk model.safetensors --experimental
 Example run against a booby-trapped checkpoint:
 
 ```
-TensorHawk v0.2.0  —  malicious_model.bin
+TensorHawk v2.0.0  —  malicious_model.bin
   format: pytorch-zip   size: 178 B   risk score: 62/100
 
   CRITICAL  Dangerous pickle import: posix.system  (97% conf)
@@ -196,9 +205,14 @@ what exists versus what's planned.
   streaming >100 GB, SIMD, and the Python SDK are still open.
 - **v1.0 — Stable platform (partial):** fuzz-style robustness gates shipped; stable plugin ABI,
   signed rule packs, and reproducible-build attestation are still open.
-- **v2.0 — Research detectors (experimental, partial):** a heuristic weight-outlier backdoor
-  indicator ships behind `--experimental`; memorization/trigger signals are still open. Anything
-  here is clearly labelled probabilistic and never presented as ground truth.
+- **v2.0 — AI supply chain, datasets & reporting (shipped):** `config` scanner for custom-code
+  execution (`auto_map` / `trust_remote_code`); `dataset` scanner for CSV/TSV/JSONL (structure,
+  PII, poisoning indicators, hidden Unicode); extensionless discovery for Ollama `sha256` blobs;
+  and professional, bicolor HTML/PDF security-assessment reports mapped to public frameworks
+  (MITRE ATLAS / OWASP LLM / CWE).
+- **Experimental track (ongoing):** a heuristic weight-outlier backdoor indicator ships behind
+  `--experimental`; memorization/trigger signals are still open. Anything here is clearly
+  labelled probabilistic and never presented as ground truth.
 
 Full detail in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 

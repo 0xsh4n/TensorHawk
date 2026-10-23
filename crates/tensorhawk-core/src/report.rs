@@ -117,16 +117,19 @@ impl Report {
     }
 
     /// A detailed, self-contained HTML fragment (the `<section>` for this
-    /// artifact): a header with risk/format/size, a severity summary, then one
-    /// rich card per finding carrying its full detail, evidence, remediation,
-    /// and framework references.
-    fn to_html_section(&self) -> String {
+    /// artifact): an artifact header with risk/format/size, a severity summary,
+    /// then one card per finding. Each finding leads with its public framework
+    /// classification (MITRE ATLAS / OWASP LLM / CWE) rather than the internal
+    /// detection code, and carries full detail, evidence, and remediation.
+    fn to_html_section(&self, index: usize) -> String {
         let mut out = String::new();
         out.push_str(&format!(
             "<section class=\"report\">\n\
-             <div class=\"report-head\">\n<h2>{target}</h2>\n\
+             <div class=\"report-head\">\n\
+             <h3 class=\"art-name\"><span class=\"art-n\">Artifact {idx}</span>{target}</h3>\n\
              <div class=\"badges\"><span class=\"score score-{sc}\">Risk {score}/100</span>\
-             <span class=\"badge fmt\">{fmt}</span><span class=\"badge\">{size}</span></div>\n</div>\n",
+             <span class=\"badge\">{fmt}</span><span class=\"badge\">{size}</span></div>\n</div>\n",
+            idx = index,
             target = esc(&self.target),
             sc = score_class(self.risk_score),
             score = self.risk_score,
@@ -142,7 +145,7 @@ impl Report {
             sev_chip("info", self.summary.info),
         ));
         if self.findings.is_empty() {
-            out.push_str("<p class=\"clean\">✓ No findings</p>\n</section>\n");
+            out.push_str("<p class=\"clean\">No findings.</p>\n</section>\n");
             return out;
         }
         for f in &self.findings {
@@ -150,19 +153,26 @@ impl Report {
             out.push_str(&format!(
                 "<article class=\"finding sev-{sev}\">\n\
                  <div class=\"f-head\"><span class=\"pill pill-{sev}\">{sevu}</span>\
-                 <h3>{title}</h3><span class=\"conf\">{conf:.0}% confidence</span></div>\n\
-                 <p class=\"f-detail\">{detail}</p>\n\
-                 <dl class=\"f-meta\">\
-                 <div><dt>Rule</dt><dd><code>{rule}</code></dd></div>\
-                 <div><dt>Scanner</dt><dd>{scanner}</dd></div>\
-                 <div><dt>Location</dt><dd><code>{loc}</code></dd></div></dl>\n",
+                 <h4>{title}</h4><span class=\"conf\">Confidence {conf:.0}%</span></div>\n",
                 sevu = sev.to_uppercase(),
                 title = esc(&f.title),
                 conf = f.confidence * 100.0,
+            ));
+            // Public framework classification leads the finding.
+            let chips = framework_chips(&f.references);
+            if !chips.is_empty() {
+                out.push_str(&format!("<div class=\"f-cls\">{chips}</div>\n"));
+            }
+            out.push_str(&format!(
+                "<p class=\"f-detail\">{detail}</p>\n\
+                 <dl class=\"f-meta\">\
+                 <div><dt>Scanner</dt><dd>{scanner}</dd></div>\
+                 <div><dt>Location</dt><dd><code>{loc}</code></dd></div>\
+                 <div><dt>Detection ID</dt><dd><code>{rule}</code></dd></div></dl>\n",
                 detail = esc(&f.detail),
-                rule = esc(&f.rule_id),
                 scanner = esc(&f.scanner),
                 loc = esc(&location_str(&f.location)),
+                rule = esc(&f.rule_id),
             ));
             if let Some(ev) = &f.evidence {
                 out.push_str(&format!(
@@ -327,8 +337,8 @@ pub fn render_html_document(reports: &[Report]) -> String {
 /// paginated PDF with running header/footer and page numbers.
 pub fn render_html_report(reports: &[Report], opts: &HtmlReportOptions) -> String {
     let mut sections = String::new();
-    for r in reports {
-        sections.push_str(&r.to_html_section());
+    for (i, r) in reports.iter().enumerate() {
+        sections.push_str(&r.to_html_section(i + 1));
     }
 
     let n = reports.len();
@@ -347,25 +357,40 @@ pub fn render_html_report(reports: &[Report], opts: &HtmlReportOptions) -> Strin
         .as_deref()
         .map(str::trim)
         .filter(|a| !a.is_empty());
-    let generated = opts.generated_at.as_deref().unwrap_or("");
+    let prepared_by = author.unwrap_or("TensorHawk");
+    let generated = opts.generated_at.as_deref().unwrap_or("—");
 
-    // Header meta line: author · timestamp · tool version.
-    let mut meta_bits: Vec<String> = Vec::new();
-    if let Some(a) = author {
-        meta_bits.push(format!("Author <strong>{}</strong>", esc(a)));
-    }
-    if !generated.is_empty() {
-        meta_bits.push(format!("Generated {}", esc(generated)));
-    }
-    meta_bits.push(format!("TensorHawk v{VERSION}"));
-    let header_meta = meta_bits.join(" &nbsp;·&nbsp; ");
+    // Overall posture, derived from the worst severity present.
+    let (p_label, p_text, p_class) = if agg.critical > 0 {
+        ("Critical", "Critical issues were identified. Immediate remediation is required before these artifacts are trusted or deployed.", "critical")
+    } else if agg.high > 0 {
+        (
+            "High",
+            "High-severity issues were identified. Remediation is required before use.",
+            "high",
+        )
+    } else if agg.medium > 0 {
+        (
+            "Elevated",
+            "Moderate issues were identified. Remediation is recommended prior to use.",
+            "medium",
+        )
+    } else if agg.low > 0 {
+        (
+            "Low",
+            "Only low-severity issues were identified. Review at your discretion.",
+            "low",
+        )
+    } else if total > 0 {
+        ("Informational", "No security-relevant issues were identified; only informational observations are reported.", "info")
+    } else {
+        (
+            "Clean",
+            "No findings were produced for the assessed artifacts.",
+            "info",
+        )
+    };
 
-    // Footer author clause (also used in the @page running footer).
-    let footer_author = author
-        .map(|a| format!("Author: {} · ", esc(a)))
-        .unwrap_or_default();
-
-    // Overall severity summary chips for the cover.
     let overall = format!(
         "{}{}{}{}{}",
         sev_chip("critical", agg.critical),
@@ -375,24 +400,40 @@ pub fn render_html_report(reports: &[Report], opts: &HtmlReportOptions) -> Strin
         sev_chip("info", agg.info),
     );
 
+    let author_row = author
+        .map(|a| format!("<tr><th>Prepared&nbsp;by</th><td>{}</td></tr>", esc(a)))
+        .unwrap_or_default();
+    let footer_left = format!("Prepared by {}", esc(prepared_by));
+
     format!(
         "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n\
          <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n\
-         <title>TensorHawk Security Report</title>\n<style>{css}</style>\n</head>\n<body>\n\
+         <title>TensorHawk — Security Assessment Report</title>\n<style>{css}</style>\n</head>\n<body>\n\
          <header class=\"doc-head\">\n\
-         <div class=\"brand\"><span class=\"logo\">🦅</span>\
-         <div><div class=\"brand-name\">TensorHawk</div>\
-         <div class=\"brand-tag\">AI Model &amp; Dataset Security Report</div></div></div>\n\
-         <div class=\"doc-meta\">{header_meta}</div>\n</header>\n\
-         <section class=\"overview\">\n\
-         <p class=\"ov-line\">{n} artifact(s) scanned &nbsp;·&nbsp; {total} finding(s)</p>\n\
-         <p class=\"summary\">{overall}</p>\n\
-         <p class=\"disclaimer\">Static, offline analysis — no model code was executed and no \
-         network was used. Findings carry a confidence; heuristic/experimental signals are \
-         indicators to investigate, not proof.</p>\n</section>\n\
-         {sections}\n\
-         <footer class=\"doc-foot\">{footer_author}TensorHawk v{VERSION} — static offline analysis. \
-         {generated}</footer>\n\
+         <div class=\"brand\"><span class=\"mark\">TH</span>\
+         <div class=\"brand-text\"><div class=\"brand-name\">TensorHawk</div>\
+         <div class=\"brand-tag\">Security Assessment Report</div></div></div>\n\
+         <table class=\"doc-info\"><tbody>{author_row}\
+         <tr><th>Date</th><td>{generated}</td></tr>\
+         <tr><th>Tool</th><td>TensorHawk v{VERSION}</td></tr>\
+         <tr><th>Scope</th><td>{n} artifact(s)</td></tr></tbody></table>\n</header>\n\
+         <main>\n\
+         <section class=\"exec\">\n<h2>Executive Summary</h2>\n\
+         <div class=\"posture posture-{p_class}\"><span class=\"posture-label\">{p_label} risk</span>\
+         <p>{p_text}</p></div>\n\
+         <p class=\"exec-line\">{n} artifact(s) were assessed and {total} finding(s) were recorded, \
+         distributed as follows:</p>\n<div class=\"summary\">{overall}</div>\n\
+         <h3>Methodology</h3>\n\
+         <p class=\"method\">TensorHawk performs static, offline inspection of model and dataset \
+         artifacts. No model code is executed and no network connection is made. Each finding \
+         carries a confidence value and is mapped, where applicable, to public security \
+         frameworks — the OWASP Top&nbsp;10 for LLM Applications, MITRE ATLAS, and CWE. Heuristic \
+         and experimental signals are indicators for investigation and are not, by themselves, \
+         proof of compromise.</p>\n</section>\n\
+         <section class=\"findings-wrap\"><h2>Detailed Findings</h2>\n{sections}</section>\n\
+         </main>\n\
+         <footer class=\"doc-foot\"><span>{footer_left}</span>\
+         <span>TensorHawk v{VERSION} · {generated} · static offline analysis</span></footer>\n\
          </body>\n</html>\n",
         css = css(author.unwrap_or("")),
     )
@@ -403,19 +444,17 @@ fn css(author: &str) -> String {
     let page_author = if author.is_empty() {
         String::new()
     } else {
-        // `string-set` would be cleaner but is less universally supported; inline
-        // the author directly into the bottom-left margin box.
         format!(
-            "@bottom-left{{content:\"Author: {}\";font-size:8pt;color:#888}}",
+            "@bottom-left{{content:\"Prepared by {}\";font-size:8pt;color:#6a7686}}",
             css_escape(author)
         )
     };
     format!(
-        "@page{{size:A4;margin:16mm 14mm 18mm 14mm;\
-         @top-left{{content:\"TensorHawk — AI Model & Dataset Security Report\";font-size:8pt;color:#888}}\
-         @top-right{{content:\"v{VERSION}\";font-size:8pt;color:#888}}\
+        "@page{{size:A4;margin:18mm 15mm 18mm 15mm;\
+         @top-left{{content:\"TensorHawk — Security Assessment Report\";font-size:8pt;color:#6a7686}}\
+         @top-right{{content:\"v{VERSION}\";font-size:8pt;color:#6a7686}}\
          {page_author}\
-         @bottom-right{{content:\"Page \" counter(page) \" of \" counter(pages);font-size:8pt;color:#888}}}}\
+         @bottom-right{{content:\"Page \" counter(page) \" of \" counter(pages);font-size:8pt;color:#6a7686}}}}\
          {BASE_CSS}"
     )
 }
@@ -425,56 +464,126 @@ fn css_escape(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
+// Professional, bicolor (navy / light-blue on white) report stylesheet.
 const BASE_CSS: &str = "\
-:root{color-scheme:light dark;--bg:#ffffff;--fg:#1a1d23;--muted:#5c6370;--card:#ffffff;--border:#e3e6ea;--accent:#b3132a;--head:#14171c;}\
-@media(prefers-color-scheme:dark){:root{--bg:#0f1115;--fg:#e6e6e6;--muted:#9aa0a6;--card:#171a21;--border:#2a2f3a;--accent:#ff5d6c;--head:#0b0d11;}}\
+:root{--navy:#123a63;--blue:#1f6fb2;--sky:#eaf2fb;--sky-line:#cfe0f2;--ink:#1e2a38;--muted:#5a6a7a;--line:#dde6ef;--bg:#ffffff;\
+--crit:#b22216;--high:#c06a0e;--med:#a9810c;--low:#1f6fb2;--info:#6b7684;}\
 *{box-sizing:border-box}\
-body{margin:0;font:14px/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--fg);padding:0 0 3rem}\
-.doc-head{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;padding:1.25rem 2rem;background:var(--head);color:#fff;border-bottom:3px solid var(--accent)}\
-.brand{display:flex;align-items:center;gap:.7rem}.logo{font-size:2rem;line-height:1}\
-.brand-name{font-size:1.4rem;font-weight:800;letter-spacing:.02em}\
-.brand-tag{font-size:.8rem;color:#b9bfc8}\
-.doc-meta{font-size:.82rem;color:#c3c9d2;text-align:right}.doc-meta strong{color:#fff}\
-.overview{margin:1.5rem 2rem 0}.ov-line{font-weight:600;margin:.25rem 0}\
-.disclaimer{color:var(--muted);font-size:.82rem;margin:.5rem 0 0;max-width:60rem}\
-.summary{margin:.5rem 0;display:flex;gap:.4rem;flex-wrap:wrap}\
-.chip{display:inline-block;padding:.12rem .55rem;border-radius:999px;font-size:.74rem;font-weight:700;border:1px solid var(--border)}\
-.chip-0{opacity:.5}\
-.chip.critical{background:#fde7ea;color:#9b1020;border-color:#f2b8c0}\
-.chip.high{background:#fde9f1;color:#9b1368;border-color:#f3bcd7}\
-.chip.medium{background:#fdf3e0;color:#8a5a00;border-color:#f1d9a8}\
-.chip.low{background:#e7f0fd;color:#13508a;border-color:#bcd4f3}\
-.chip.info{background:#eef0f2;color:#4a5160;border-color:#d7dbe0}\
-section.report{margin:1.25rem 2rem;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:1rem 1.25rem;break-inside:avoid}\
-.report-head{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:.5rem}\
-h2{margin:.1rem 0;font-size:1.05rem;word-break:break-all}\
+body{margin:0;font:13.5px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);padding:0 0 2rem}\
+.doc-head{display:flex;justify-content:space-between;align-items:center;gap:1.5rem;flex-wrap:wrap;padding:1.4rem 2.2rem;background:var(--sky);border-bottom:3px solid var(--navy)}\
+.brand{display:flex;align-items:center;gap:.85rem}\
+.mark{display:inline-flex;align-items:center;justify-content:center;width:42px;height:42px;border-radius:9px;background:var(--navy);color:#fff;font-weight:800;font-size:1.05rem;letter-spacing:.04em}\
+.brand-name{font-size:1.5rem;font-weight:800;color:var(--navy);letter-spacing:.01em;line-height:1.1}\
+.brand-tag{font-size:.72rem;color:var(--blue);text-transform:uppercase;letter-spacing:.14em;font-weight:600}\
+.doc-info{border-collapse:collapse;font-size:.78rem}\
+.doc-info th{text-align:right;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em;padding:.1rem .7rem .1rem 0;font-size:.68rem;white-space:nowrap}\
+.doc-info td{text-align:left;color:var(--ink);padding:.1rem 0;font-weight:600}\
+main{padding:0 2.2rem}\
+h2{color:var(--navy);font-size:1.15rem;margin:1.6rem 0 .6rem;padding-bottom:.35rem;border-bottom:2px solid var(--sky-line)}\
+h3{color:var(--navy);font-size:.95rem;margin:1rem 0 .4rem}\
+.exec .exec-line{margin:.6rem 0 .3rem;color:var(--muted)}\
+.posture{display:flex;align-items:baseline;gap:.8rem;flex-wrap:wrap;background:var(--sky);border:1px solid var(--sky-line);border-left:4px solid var(--navy);border-radius:7px;padding:.7rem .9rem;margin:.4rem 0}\
+.posture p{margin:0;color:var(--ink)}\
+.posture-label{font-weight:800;color:#fff;background:var(--navy);border-radius:5px;padding:.15rem .6rem;font-size:.78rem;white-space:nowrap}\
+.posture-critical .posture-label{background:var(--crit)}.posture-high .posture-label{background:var(--high)}\
+.posture-medium .posture-label{background:var(--med)}.posture-low .posture-label{background:var(--low)}\
+.posture-info .posture-label{background:var(--info)}\
+.method{color:var(--muted);font-size:.86rem;max-width:62rem}\
+.summary{margin:.5rem 0;display:flex;gap:.45rem;flex-wrap:wrap}\
+.chip{display:inline-block;padding:.14rem .6rem;border-radius:5px;font-size:.72rem;font-weight:700;border:1px solid var(--line);background:#f6f9fc;color:var(--ink)}\
+.chip-0{opacity:.45}\
+.chip.critical{border-left:3px solid var(--crit)}.chip.high{border-left:3px solid var(--high)}\
+.chip.medium{border-left:3px solid var(--med)}.chip.low{border-left:3px solid var(--low)}\
+.chip.info{border-left:3px solid var(--info)}\
+section.report{margin:1rem 0;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:.9rem 1.1rem}\
+.report-head{break-after:avoid}\
+h2{break-after:avoid}\
+.report-head{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:.55rem;margin-bottom:.3rem}\
+.art-name{margin:0;font-size:1rem;color:var(--navy);word-break:break-all}\
+.art-n{display:inline-block;font-size:.66rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--blue);background:var(--sky);border:1px solid var(--sky-line);border-radius:4px;padding:.05rem .4rem;margin-right:.5rem;vertical-align:middle}\
 .badges{display:flex;gap:.4rem;flex-wrap:wrap;align-items:center}\
-.badge{font-size:.74rem;color:var(--muted);border:1px solid var(--border);border-radius:6px;padding:.1rem .45rem}\
-.score{font-weight:800;font-size:.78rem;border-radius:6px;padding:.12rem .5rem;color:#fff}\
-.score-low{background:#2f9e44}.score-med{background:#d29922}.score-high{background:#c92a2a}\
-.clean{color:#2f9e44;font-weight:700}\
-.finding{border:1px solid var(--border);border-left:4px solid var(--border);border-radius:8px;padding:.6rem .8rem;margin:.7rem 0;break-inside:avoid}\
-.finding.sev-critical{border-left-color:#c92a2a}.finding.sev-high{border-left-color:#d6336c}\
-.finding.sev-medium{border-left-color:#d29922}.finding.sev-low{border-left-color:#1c7ed6}\
-.finding.sev-info{border-left-color:#868e96}\
-.f-head{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}\
-.f-head h3{margin:0;font-size:.98rem;flex:1 1 auto}.conf{color:var(--muted);font-size:.78rem}\
-.pill{display:inline-block;padding:.08rem .5rem;border-radius:999px;font-size:.68rem;font-weight:800;color:#fff;letter-spacing:.03em}\
-.pill-critical{background:#c92a2a}.pill-high{background:#d6336c}.pill-medium{background:#d29922}\
-.pill-low{background:#1c7ed6}.pill-info{background:#868e96}\
-.f-detail{margin:.4rem 0;color:var(--fg)}\
-.f-meta{display:flex;flex-wrap:wrap;gap:.3rem 1.4rem;margin:.4rem 0;padding:0}\
-.f-meta>div{display:flex;gap:.35rem;align-items:baseline}\
-.f-meta dt{margin:0;color:var(--muted);font-size:.74rem;text-transform:uppercase;letter-spacing:.03em}\
+.badge{font-size:.72rem;color:var(--muted);border:1px solid var(--line);border-radius:5px;padding:.1rem .45rem;background:#f6f9fc}\
+.score{font-weight:800;font-size:.74rem;border-radius:5px;padding:.14rem .5rem;color:#fff}\
+.score-low{background:#2f8f4e}.score-med{background:var(--med)}.score-high{background:var(--crit)}\
+.clean{color:#2f8f4e;font-weight:700;margin:.4rem 0}\
+.finding{border:1px solid var(--line);border-left:4px solid var(--info);border-radius:7px;padding:.65rem .85rem;margin:.7rem 0;break-inside:avoid}\
+.finding.sev-critical{border-left-color:var(--crit)}.finding.sev-high{border-left-color:var(--high)}\
+.finding.sev-medium{border-left-color:var(--med)}.finding.sev-low{border-left-color:var(--low)}\
+.finding.sev-info{border-left-color:var(--info)}\
+.f-head{display:flex;align-items:center;gap:.55rem;flex-wrap:wrap}\
+.f-head h4{margin:0;font-size:.95rem;color:var(--ink);flex:1 1 auto}.conf{color:var(--muted);font-size:.76rem}\
+.pill{display:inline-block;padding:.1rem .5rem;border-radius:4px;font-size:.66rem;font-weight:800;color:#fff;letter-spacing:.05em}\
+.pill-critical{background:var(--crit)}.pill-high{background:var(--high)}.pill-medium{background:var(--med)}\
+.pill-low{background:var(--low)}.pill-info{background:var(--info)}\
+.f-cls{display:flex;gap:.4rem;flex-wrap:wrap;margin:.45rem 0}\
+.cls{font-size:.7rem;font-weight:700;border-radius:4px;padding:.1rem .5rem;border:1px solid var(--sky-line);background:var(--sky);color:var(--navy)}\
+.cls.atlas{background:#eef4fb;border-color:#c8ddf2;color:#0f4c81}\
+.cls.owasp{background:#eaf3ee;border-color:#c6e0d0;color:#1d6b43}\
+.cls.cwe{background:#f1f0fb;border-color:#d4d0ee;color:#4a3f8f}\
+.cls.cve{background:#fbf0ee;border-color:#eecfc8;color:#8f3a2e}\
+.f-detail{margin:.4rem 0;color:var(--ink)}\
+.f-meta{display:flex;flex-wrap:wrap;gap:.25rem 1.6rem;margin:.45rem 0;padding:0}\
+.f-meta>div{display:flex;gap:.4rem;align-items:baseline}\
+.f-meta dt{margin:0;color:var(--muted);font-size:.68rem;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}\
 .f-meta dd{margin:0;font-size:.82rem}\
-.f-row{margin:.35rem 0;font-size:.84rem}\
-.lbl{display:inline-block;min-width:5.5rem;color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.03em;vertical-align:top}\
-.f-ev code{background:rgba(127,127,127,.12);padding:.08rem .3rem;border-radius:4px}\
-.f-rem{background:rgba(47,158,68,.08);border:1px solid rgba(47,158,68,.25);border-radius:6px;padding:.35rem .5rem}\
-.f-ref ul{display:inline-block;margin:0;padding-left:1.1rem}.f-ref li{font-size:.8rem;color:var(--muted)}\
-code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.85em}\
-.doc-foot{margin:2rem;padding-top:1rem;border-top:1px solid var(--border);color:var(--muted);font-size:.8rem}\
+.f-row{margin:.4rem 0;font-size:.84rem}\
+.lbl{display:inline-block;min-width:6rem;color:var(--muted);font-size:.68rem;text-transform:uppercase;letter-spacing:.04em;vertical-align:top}\
+.f-ev code{background:#f3f6f9;border:1px solid var(--line);padding:.1rem .35rem;border-radius:4px}\
+.f-rem{background:var(--sky);border:1px solid var(--sky-line);border-radius:6px;padding:.4rem .6rem}\
+.f-ref ul{display:inline-block;margin:0;padding-left:1.1rem;vertical-align:top}.f-ref li{font-size:.8rem;color:var(--muted)}\
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.86em}\
+.doc-foot{display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin:2rem 2.2rem 0;padding-top:.8rem;border-top:2px solid var(--sky-line);color:var(--muted);font-size:.76rem}\
 ";
+
+/// Render the public-framework classification chips for a finding, derived from
+/// its references (MITRE ATLAS / OWASP LLM / CWE / CVE). Internal `THK-` codes
+/// are never shown here — the public mapping leads.
+fn framework_chips(references: &[String]) -> String {
+    let mut seen: Vec<String> = Vec::new();
+    let mut out = String::new();
+    for r in references {
+        if let Some((class, label)) = framework_tag(r) {
+            if seen.iter().any(|s| s == &label) {
+                continue;
+            }
+            seen.push(label.clone());
+            out.push_str(&format!(
+                "<span class=\"cls {class}\">{}</span>",
+                esc(&label)
+            ));
+        }
+    }
+    out
+}
+
+/// Classify a reference string into `(css_class, short_public_id)` for the
+/// recognized public frameworks, or `None` for anything else.
+fn framework_tag(r: &str) -> Option<(&'static str, String)> {
+    let head = r.split(':').next().unwrap_or("").trim();
+    let upper = head.to_ascii_uppercase();
+    if upper.contains("ATLAS") {
+        let tok = r.split_whitespace().find(|w| w.starts_with("AML."));
+        let label = match tok {
+            Some(t) => format!("MITRE ATLAS {t}"),
+            None => "MITRE ATLAS".to_string(),
+        };
+        return Some(("atlas", label));
+    }
+    if upper.starts_with("OWASP") {
+        // "OWASP-LLM05" -> "OWASP LLM05"
+        return Some((
+            "owasp",
+            head.replacen("OWASP-", "OWASP ", 1).replace('-', " "),
+        ));
+    }
+    if upper.starts_with("CWE-") {
+        return Some(("cwe", head.to_string()));
+    }
+    if upper.starts_with("CVE-") {
+        return Some(("cve", head.to_string()));
+    }
+    None
+}
 
 fn score_class(score: u32) -> &'static str {
     match score {
