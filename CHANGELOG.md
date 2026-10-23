@@ -5,6 +5,8 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+
+## [0.3.0] - 2026-10-23
 ### Added
 - **Hugging Face JSON config parsing:** `config.json`, `tokenizer_config.json`,
   `adapter_config.json`, `model_index.json` and other `.json` config documents
@@ -60,6 +62,7 @@ All notable changes to this project are documented here. The format follows
 - Cross-platform release automation (Linux gnu/musl, macOS x86_64/arm64, Windows)
   with SHA256 checksums.
 
-[Unreleased]: https://github.com/0xsh4n/TensorHawk/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/0xsh4n/TensorHawk/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/0xsh4n/TensorHawk/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/0xsh4n/TensorHawk/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/0xsh4n/TensorHawk/releases/tag/v0.1.0
