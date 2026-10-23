@@ -116,52 +116,82 @@ impl Report {
         serde_json::to_string_pretty(&doc).unwrap_or_default()
     }
 
-    /// A single-file HTML report fragment (the `<section>` for this artifact).
+    /// A detailed, self-contained HTML fragment (the `<section>` for this
+    /// artifact): a header with risk/format/size, a severity summary, then one
+    /// rich card per finding carrying its full detail, evidence, remediation,
+    /// and framework references.
     fn to_html_section(&self) -> String {
         let mut out = String::new();
         out.push_str(&format!(
-            "<section class=\"report\">\n<h2>{}</h2>\n<p class=\"meta\">format <code>{}</code> · \
-             size {} · risk score <span class=\"score score-{}\">{}/100</span></p>\n",
-            esc(&self.target),
-            esc(&self.format),
-            human_bytes(self.bytes),
-            score_class(self.risk_score),
-            self.risk_score,
+            "<section class=\"report\">\n\
+             <div class=\"report-head\">\n<h2>{target}</h2>\n\
+             <div class=\"badges\"><span class=\"score score-{sc}\">Risk {score}/100</span>\
+             <span class=\"badge fmt\">{fmt}</span><span class=\"badge\">{size}</span></div>\n</div>\n",
+            target = esc(&self.target),
+            sc = score_class(self.risk_score),
+            score = self.risk_score,
+            fmt = esc(&self.format),
+            size = human_bytes(self.bytes),
         ));
         out.push_str(&format!(
-            "<p class=\"summary\">{} critical · {} high · {} medium · {} low · {} info</p>\n",
-            self.summary.critical,
-            self.summary.high,
-            self.summary.medium,
-            self.summary.low,
-            self.summary.info
+            "<p class=\"summary\">{}{}{}{}{}</p>\n",
+            sev_chip("critical", self.summary.critical),
+            sev_chip("high", self.summary.high),
+            sev_chip("medium", self.summary.medium),
+            sev_chip("low", self.summary.low),
+            sev_chip("info", self.summary.info),
         ));
         if self.findings.is_empty() {
-            out.push_str("<p class=\"clean\">✓ no findings</p>\n</section>\n");
+            out.push_str("<p class=\"clean\">✓ No findings</p>\n</section>\n");
             return out;
         }
-        out.push_str(
-            "<table>\n<thead><tr><th>Severity</th><th>Finding</th><th>Rule</th>\
-                      <th>Location</th><th>Conf.</th><th>Evidence</th></tr></thead>\n<tbody>\n",
-        );
         for f in &self.findings {
+            let sev = f.severity.as_str();
             out.push_str(&format!(
-                "<tr class=\"sev-{sev}\"><td><span class=\"pill pill-{sev}\">{sevu}</span></td>\
-                 <td><strong>{title}</strong><br><span class=\"detail\">{detail}</span></td>\
-                 <td><code>{rule}</code><br><span class=\"scanner\">{scanner}</span></td>\
-                 <td><code>{loc}</code></td><td>{conf:.0}%</td><td>{ev}</td></tr>\n",
-                sev = f.severity.as_str(),
-                sevu = f.severity.as_str().to_uppercase(),
+                "<article class=\"finding sev-{sev}\">\n\
+                 <div class=\"f-head\"><span class=\"pill pill-{sev}\">{sevu}</span>\
+                 <h3>{title}</h3><span class=\"conf\">{conf:.0}% confidence</span></div>\n\
+                 <p class=\"f-detail\">{detail}</p>\n\
+                 <dl class=\"f-meta\">\
+                 <div><dt>Rule</dt><dd><code>{rule}</code></dd></div>\
+                 <div><dt>Scanner</dt><dd>{scanner}</dd></div>\
+                 <div><dt>Location</dt><dd><code>{loc}</code></dd></div></dl>\n",
+                sevu = sev.to_uppercase(),
                 title = esc(&f.title),
+                conf = f.confidence * 100.0,
                 detail = esc(&f.detail),
                 rule = esc(&f.rule_id),
                 scanner = esc(&f.scanner),
-                loc = esc(&f.location.component),
-                conf = f.confidence * 100.0,
-                ev = f.evidence.as_deref().map(esc).unwrap_or_default(),
+                loc = esc(&location_str(&f.location)),
             ));
+            if let Some(ev) = &f.evidence {
+                out.push_str(&format!(
+                    "<div class=\"f-row f-ev\"><span class=\"lbl\">Evidence</span>\
+                     <code>{}</code></div>\n",
+                    esc(ev)
+                ));
+            }
+            if let Some(rem) = &f.remediation {
+                out.push_str(&format!(
+                    "<div class=\"f-row f-rem\"><span class=\"lbl\">Remediation</span>\
+                     <span>{}</span></div>\n",
+                    esc(rem)
+                ));
+            }
+            if !f.references.is_empty() {
+                let items: String = f
+                    .references
+                    .iter()
+                    .map(|r| format!("<li>{}</li>", esc(r)))
+                    .collect();
+                out.push_str(&format!(
+                    "<div class=\"f-row f-ref\"><span class=\"lbl\">References</span>\
+                     <ul>{items}</ul></div>\n"
+                ));
+            }
+            out.push_str("</article>\n");
         }
-        out.push_str("</tbody>\n</table>\n</section>\n");
+        out.push_str("</section>\n");
         out
     }
 
@@ -276,43 +306,174 @@ pub fn merged_sarif(reports: &[Report]) -> String {
     serde_json::to_string_pretty(&doc).unwrap_or_default()
 }
 
-/// Render a complete HTML document for one or more reports.
+/// Options controlling the branded HTML/PDF report document.
+#[derive(Debug, Clone, Default)]
+pub struct HtmlReportOptions {
+    /// Author shown in the header and footer (e.g. `0xsh4n`). Empty/None = omit.
+    pub author: Option<String>,
+    /// Preformatted generation timestamp (e.g. `2026-10-23 14:05 UTC`).
+    pub generated_at: Option<String>,
+}
+
+/// Render a complete HTML document for one or more reports, with default
+/// (unbranded) options. Kept for backward compatibility.
 pub fn render_html_document(reports: &[Report]) -> String {
+    render_html_report(reports, &HtmlReportOptions::default())
+}
+
+/// Render a complete, self-contained, print-ready HTML document for one or more
+/// reports, with a branded TensorHawk header/footer and optional author. The
+/// document carries `@page` rules so a converter (e.g. WeasyPrint) produces a
+/// paginated PDF with running header/footer and page numbers.
+pub fn render_html_report(reports: &[Report], opts: &HtmlReportOptions) -> String {
     let mut sections = String::new();
     for r in reports {
         sections.push_str(&r.to_html_section());
     }
+
+    let n = reports.len();
     let total: usize = reports.iter().map(|r| r.findings.len()).sum();
+    let mut agg = Summary::default();
+    for r in reports {
+        agg.critical += r.summary.critical;
+        agg.high += r.summary.high;
+        agg.medium += r.summary.medium;
+        agg.low += r.summary.low;
+        agg.info += r.summary.info;
+    }
+
+    let author = opts
+        .author
+        .as_deref()
+        .map(str::trim)
+        .filter(|a| !a.is_empty());
+    let generated = opts.generated_at.as_deref().unwrap_or("");
+
+    // Header meta line: author · timestamp · tool version.
+    let mut meta_bits: Vec<String> = Vec::new();
+    if let Some(a) = author {
+        meta_bits.push(format!("Author <strong>{}</strong>", esc(a)));
+    }
+    if !generated.is_empty() {
+        meta_bits.push(format!("Generated {}", esc(generated)));
+    }
+    meta_bits.push(format!("TensorHawk v{VERSION}"));
+    let header_meta = meta_bits.join(" &nbsp;·&nbsp; ");
+
+    // Footer author clause (also used in the @page running footer).
+    let footer_author = author
+        .map(|a| format!("Author: {} · ", esc(a)))
+        .unwrap_or_default();
+
+    // Overall severity summary chips for the cover.
+    let overall = format!(
+        "{}{}{}{}{}",
+        sev_chip("critical", agg.critical),
+        sev_chip("high", agg.high),
+        sev_chip("medium", agg.medium),
+        sev_chip("low", agg.low),
+        sev_chip("info", agg.info),
+    );
+
     format!(
         "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n\
          <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n\
-         <title>TensorHawk report</title>\n<style>{CSS}</style>\n</head>\n<body>\n\
-         <header><h1>🦅 TensorHawk</h1>\
-         <p>v{VERSION} · {n} artifact(s) · {total} finding(s)</p></header>\n\
-         {sections}\n<footer>Generated by TensorHawk v{VERSION} — static, offline analysis.</footer>\n\
+         <title>TensorHawk Security Report</title>\n<style>{css}</style>\n</head>\n<body>\n\
+         <header class=\"doc-head\">\n\
+         <div class=\"brand\"><span class=\"logo\">🦅</span>\
+         <div><div class=\"brand-name\">TensorHawk</div>\
+         <div class=\"brand-tag\">AI Model &amp; Dataset Security Report</div></div></div>\n\
+         <div class=\"doc-meta\">{header_meta}</div>\n</header>\n\
+         <section class=\"overview\">\n\
+         <p class=\"ov-line\">{n} artifact(s) scanned &nbsp;·&nbsp; {total} finding(s)</p>\n\
+         <p class=\"summary\">{overall}</p>\n\
+         <p class=\"disclaimer\">Static, offline analysis — no model code was executed and no \
+         network was used. Findings carry a confidence; heuristic/experimental signals are \
+         indicators to investigate, not proof.</p>\n</section>\n\
+         {sections}\n\
+         <footer class=\"doc-foot\">{footer_author}TensorHawk v{VERSION} — static offline analysis. \
+         {generated}</footer>\n\
          </body>\n</html>\n",
-        n = reports.len(),
+        css = css(author.unwrap_or("")),
     )
 }
 
-const CSS: &str = "\
-:root{color-scheme:light dark;--bg:#0f1115;--fg:#e6e6e6;--muted:#9aa0a6;--card:#171a21;--border:#2a2f3a;}\
-@media(prefers-color-scheme:light){:root{--bg:#f7f7f8;--fg:#1a1a1a;--muted:#666;--card:#fff;--border:#e2e2e2;}}\
-*{box-sizing:border-box}body{margin:0;font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--fg);padding:0 0 3rem}\
-header{padding:1.5rem 2rem;border-bottom:1px solid var(--border)}header h1{margin:0 0 .25rem}header p{margin:0;color:var(--muted)}\
-section.report{margin:1.5rem 2rem;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:1rem 1.25rem}\
-h2{margin:.2rem 0;font-size:1.1rem;word-break:break-all}.meta,.summary{color:var(--muted);margin:.25rem 0}\
-.score{font-weight:700}.score-low{color:#3fb950}.score-med{color:#d29922}.score-high{color:#f85149}\
-.clean{color:#3fb950;font-weight:600}\
-table{width:100%;border-collapse:collapse;margin-top:.75rem;font-size:.92rem}\
-th,td{text-align:left;padding:.5rem .6rem;border-bottom:1px solid var(--border);vertical-align:top}\
-th{color:var(--muted);font-weight:600;font-size:.8rem;text-transform:uppercase;letter-spacing:.03em}\
-code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.85em}\
-.detail{color:var(--muted);font-size:.88rem}.scanner{color:var(--muted);font-size:.8rem}\
-.pill{display:inline-block;padding:.1rem .5rem;border-radius:999px;font-size:.72rem;font-weight:700;color:#fff}\
-.pill-critical{background:#f85149}.pill-high{background:#db61a2}.pill-medium{background:#d29922}\
-.pill-low{background:#388bfd}.pill-info{background:#6e7681}\
-footer{margin:2rem;color:var(--muted);font-size:.85rem}\
+/// Build the stylesheet, injecting the author into the `@page` running footer.
+fn css(author: &str) -> String {
+    let page_author = if author.is_empty() {
+        String::new()
+    } else {
+        // `string-set` would be cleaner but is less universally supported; inline
+        // the author directly into the bottom-left margin box.
+        format!(
+            "@bottom-left{{content:\"Author: {}\";font-size:8pt;color:#888}}",
+            css_escape(author)
+        )
+    };
+    format!(
+        "@page{{size:A4;margin:16mm 14mm 18mm 14mm;\
+         @top-left{{content:\"TensorHawk — AI Model & Dataset Security Report\";font-size:8pt;color:#888}}\
+         @top-right{{content:\"v{VERSION}\";font-size:8pt;color:#888}}\
+         {page_author}\
+         @bottom-right{{content:\"Page \" counter(page) \" of \" counter(pages);font-size:8pt;color:#888}}}}\
+         {BASE_CSS}"
+    )
+}
+
+/// Escape a string for safe use inside a CSS `content:\"...\"` literal.
+fn css_escape(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+const BASE_CSS: &str = "\
+:root{color-scheme:light dark;--bg:#ffffff;--fg:#1a1d23;--muted:#5c6370;--card:#ffffff;--border:#e3e6ea;--accent:#b3132a;--head:#14171c;}\
+@media(prefers-color-scheme:dark){:root{--bg:#0f1115;--fg:#e6e6e6;--muted:#9aa0a6;--card:#171a21;--border:#2a2f3a;--accent:#ff5d6c;--head:#0b0d11;}}\
+*{box-sizing:border-box}\
+body{margin:0;font:14px/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--fg);padding:0 0 3rem}\
+.doc-head{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;padding:1.25rem 2rem;background:var(--head);color:#fff;border-bottom:3px solid var(--accent)}\
+.brand{display:flex;align-items:center;gap:.7rem}.logo{font-size:2rem;line-height:1}\
+.brand-name{font-size:1.4rem;font-weight:800;letter-spacing:.02em}\
+.brand-tag{font-size:.8rem;color:#b9bfc8}\
+.doc-meta{font-size:.82rem;color:#c3c9d2;text-align:right}.doc-meta strong{color:#fff}\
+.overview{margin:1.5rem 2rem 0}.ov-line{font-weight:600;margin:.25rem 0}\
+.disclaimer{color:var(--muted);font-size:.82rem;margin:.5rem 0 0;max-width:60rem}\
+.summary{margin:.5rem 0;display:flex;gap:.4rem;flex-wrap:wrap}\
+.chip{display:inline-block;padding:.12rem .55rem;border-radius:999px;font-size:.74rem;font-weight:700;border:1px solid var(--border)}\
+.chip-0{opacity:.5}\
+.chip.critical{background:#fde7ea;color:#9b1020;border-color:#f2b8c0}\
+.chip.high{background:#fde9f1;color:#9b1368;border-color:#f3bcd7}\
+.chip.medium{background:#fdf3e0;color:#8a5a00;border-color:#f1d9a8}\
+.chip.low{background:#e7f0fd;color:#13508a;border-color:#bcd4f3}\
+.chip.info{background:#eef0f2;color:#4a5160;border-color:#d7dbe0}\
+section.report{margin:1.25rem 2rem;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:1rem 1.25rem;break-inside:avoid}\
+.report-head{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:.5rem}\
+h2{margin:.1rem 0;font-size:1.05rem;word-break:break-all}\
+.badges{display:flex;gap:.4rem;flex-wrap:wrap;align-items:center}\
+.badge{font-size:.74rem;color:var(--muted);border:1px solid var(--border);border-radius:6px;padding:.1rem .45rem}\
+.score{font-weight:800;font-size:.78rem;border-radius:6px;padding:.12rem .5rem;color:#fff}\
+.score-low{background:#2f9e44}.score-med{background:#d29922}.score-high{background:#c92a2a}\
+.clean{color:#2f9e44;font-weight:700}\
+.finding{border:1px solid var(--border);border-left:4px solid var(--border);border-radius:8px;padding:.6rem .8rem;margin:.7rem 0;break-inside:avoid}\
+.finding.sev-critical{border-left-color:#c92a2a}.finding.sev-high{border-left-color:#d6336c}\
+.finding.sev-medium{border-left-color:#d29922}.finding.sev-low{border-left-color:#1c7ed6}\
+.finding.sev-info{border-left-color:#868e96}\
+.f-head{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}\
+.f-head h3{margin:0;font-size:.98rem;flex:1 1 auto}.conf{color:var(--muted);font-size:.78rem}\
+.pill{display:inline-block;padding:.08rem .5rem;border-radius:999px;font-size:.68rem;font-weight:800;color:#fff;letter-spacing:.03em}\
+.pill-critical{background:#c92a2a}.pill-high{background:#d6336c}.pill-medium{background:#d29922}\
+.pill-low{background:#1c7ed6}.pill-info{background:#868e96}\
+.f-detail{margin:.4rem 0;color:var(--fg)}\
+.f-meta{display:flex;flex-wrap:wrap;gap:.3rem 1.4rem;margin:.4rem 0;padding:0}\
+.f-meta>div{display:flex;gap:.35rem;align-items:baseline}\
+.f-meta dt{margin:0;color:var(--muted);font-size:.74rem;text-transform:uppercase;letter-spacing:.03em}\
+.f-meta dd{margin:0;font-size:.82rem}\
+.f-row{margin:.35rem 0;font-size:.84rem}\
+.lbl{display:inline-block;min-width:5.5rem;color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.03em;vertical-align:top}\
+.f-ev code{background:rgba(127,127,127,.12);padding:.08rem .3rem;border-radius:4px}\
+.f-rem{background:rgba(47,158,68,.08);border:1px solid rgba(47,158,68,.25);border-radius:6px;padding:.35rem .5rem}\
+.f-ref ul{display:inline-block;margin:0;padding-left:1.1rem}.f-ref li{font-size:.8rem;color:var(--muted)}\
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.85em}\
+.doc-foot{margin:2rem;padding-top:1rem;border-top:1px solid var(--border);color:var(--muted);font-size:.8rem}\
 ";
 
 fn score_class(score: u32) -> &'static str {
@@ -320,6 +481,20 @@ fn score_class(score: u32) -> &'static str {
         0..=19 => "low",
         20..=59 => "med",
         _ => "high",
+    }
+}
+
+/// A severity count chip for the summary rows; dimmed when the count is zero.
+fn sev_chip(kind: &str, n: usize) -> String {
+    let dim = if n == 0 { " chip-0" } else { "" };
+    format!("<span class=\"chip {kind}{dim}\">{n} {kind}</span>")
+}
+
+/// Render a finding location as `component` or `component @offset`.
+fn location_str(loc: &crate::finding::Location) -> String {
+    match loc.offset {
+        Some(o) => format!("{} @{o}", loc.component),
+        None => loc.component.clone(),
     }
 }
 
@@ -398,5 +573,53 @@ impl Palette {
             20..=59 => self.yellow,
             _ => self.red,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::finding::{Finding, Location};
+
+    fn sample_report() -> Report {
+        let f = Finding::builder("THK-TST-001", "test", Severity::High)
+            .title("Example finding")
+            .detail("A detailed description.")
+            .location(Location::at("component", 42))
+            .remediation("Do the safe thing instead.")
+            .reference("CWE-000: Example")
+            .evidence("ab…yz (8 chars)")
+            .build();
+        Report::new("model.bin".into(), "gguf".into(), 1024, vec![f])
+    }
+
+    #[test]
+    fn branded_report_includes_author_and_full_detail() {
+        let opts = HtmlReportOptions {
+            author: Some("0xsh4n".into()),
+            generated_at: Some("2026-10-23 12:00 UTC".into()),
+        };
+        let html = render_html_report(std::slice::from_ref(&sample_report()), &opts);
+        assert!(html.starts_with("<!doctype html>"));
+        assert!(html.contains("TensorHawk"));
+        assert!(html.contains("0xsh4n")); // header byline + @page footer
+        assert!(html.contains("2026-10-23 12:00 UTC"));
+        // Detailed fields that the old table dropped are now present.
+        assert!(html.contains("Do the safe thing instead.")); // remediation
+        assert!(html.contains("CWE-000: Example")); // reference
+        assert!(html.contains("component @42")); // location with offset
+                                                 // Self-contained: no external resource loads.
+        assert!(!html.contains("http://"));
+        assert!(!html.contains("src=\"http"));
+    }
+
+    #[test]
+    fn empty_author_omits_byline() {
+        let opts = HtmlReportOptions {
+            author: Some("   ".into()),
+            generated_at: None,
+        };
+        let html = render_html_report(std::slice::from_ref(&sample_report()), &opts);
+        assert!(!html.contains("Author"));
     }
 }
