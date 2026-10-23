@@ -6,18 +6,23 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-## [0.3.0] - 2026-10-23
+## [2.0.0] - 2026-10-23
 ### Added
-- **Branded, detailed HTML/PDF reports:** the HTML report now renders a
-  TensorHawk document header (with an `--author` byline, default `0xsh4n`),
-  a generation timestamp, an overview summary, and one rich card per finding
-  carrying full detail, evidence, **remediation**, and framework **references**
-  (previously dropped from HTML). A new `--format pdf` converts the same
-  print-ready document to a paginated PDF via a local converter (WeasyPrint
-  preferred, then wkhtmltopdf or headless Chromium/Chrome) — running header,
-  per-page footer with author and `Page N of M`. `pdf` requires `--output`;
-  if no converter is installed it fails with guidance (optional integration,
-  no new Rust dependency). `--author ""` omits the byline.
+- **Professional HTML/PDF assessment reports.** The report is a formal,
+  bicolor (navy / light-blue on white) security-assessment document: a cover
+  with a TensorHawk wordmark and a *Prepared by / Date / Tool / Scope* block, an
+  **Executive Summary** with a derived overall-risk posture, a **Methodology**
+  note, and **Detailed Findings**. Each finding leads with its **public
+  framework classification** — MITRE ATLAS, OWASP Top 10 for LLM Applications,
+  and CWE — rendered as chips; the internal `THK-` code is demoted to a small
+  "Detection ID". Findings carry full detail, redacted evidence, remediation,
+  and references. A new **`--format pdf`** converts the same print-ready
+  document to a paginated PDF via a local converter (WeasyPrint preferred, then
+  wkhtmltopdf or headless Chromium/Chrome), with a running header and a footer
+  carrying the author and `Page N of M`. `pdf` requires `--output`; with no
+  converter installed it fails with guidance (optional integration, no new Rust
+  dependency). New `--author <NAME>` flag (default `0xsh4n`; `--author ""`
+  omits the byline).
 - **Dataset analysis (`dataset` scanner):** CSV / TSV / JSONL are now recognized
   artifact formats. From a bounded sample the scanner reconstructs the dataset's
   **structure** (columns + inferred types, row count), and statically flags
@@ -86,7 +91,7 @@ All notable changes to this project are documented here. The format follows
 - Cross-platform release automation (Linux gnu/musl, macOS x86_64/arm64, Windows)
   with SHA256 checksums.
 
-[Unreleased]: https://github.com/0xsh4n/TensorHawk/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/0xsh4n/TensorHawk/compare/v0.2.0...v0.3.0
+[Unreleased]: https://github.com/0xsh4n/TensorHawk/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/0xsh4n/TensorHawk/compare/v0.2.0...v2.0.0
 [0.2.0]: https://github.com/0xsh4n/TensorHawk/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/0xsh4n/TensorHawk/releases/tag/v0.1.0
